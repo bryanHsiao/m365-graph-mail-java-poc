@@ -72,7 +72,7 @@
     <p class="statement-line">Exchange Online 已經停用 IMAP／POP 的帳號密碼登入，用 JavaMail 帳密讀信的舊程式都得改。這份紀錄從申請 Microsoft 365 試用版開始，一步步做到 Java 8 程式以「應用程式身分」寄信、讀外部來信、解析中文內容、搬到「已處理」資料夾。所有指令、程式片段、截圖與踩過的坑都在這裡。</p>
     </div>
     <dl class="facts">
-      <div><dt><span class="fact-k">為什麼要改</span>帳密登入走不通了</dt><dd>Exchange Online 自 2022 年 10 月起停用 IMAP／POP 帳密登入，無法重新開啟；SMTP 帳密寄信也已宣布停用，目前暫緩到 2026 年底。</dd></div>
+      <div><dt><span class="fact-k">為什麼要改</span>帳密登入走不通了</dt><dd>Exchange Online <a href="https://learn.microsoft.com/zh-tw/exchange/clients-and-mobile-in-exchange-online/deprecation-of-basic-authentication-exchange-online">自 2022 年 10 月起停用 IMAP／POP 帳密登入</a>，無法重新開啟；SMTP 帳密寄信也已宣布停用，目前暫緩到 2026 年底。</dd></div>
       <div><dt><span class="fact-k">這份做到</span>寄、讀、解析、搬移</dt><dd>Java 8（Domino 11 的 JVM 版本）只用 JDK 內建的 HTTP 與 JavaMail，不另掛 HTTP／JSON 函式庫。</dd></div>
       <div><dt><span class="fact-k">安全底線</span>只授權一個信箱</dt><dd>用 Exchange RBAC for Applications 限定範圍，並以反向測試確認：同一個應用程式去讀寫其他信箱，回 403 存取被拒。</dd></div>
     </dl>
