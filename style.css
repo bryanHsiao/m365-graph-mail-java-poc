@@ -281,3 +281,7 @@ table.ruled td { min-width: 4.5em; }
   .js table.ruled.stack td:first-child::before { display: none; }
   .js table.ruled.stack td:first-child { font-size: var(--text-lg); }
 }
+
+/* 內文裡的外部連結：底線用訊號色，看得出是連結 */
+.statement-line a, .facts a, .myths a, ul.points a, table.ruled a, .note a, .callout a, .more p a { text-decoration-color: var(--color-accent); text-decoration-thickness: 1px; text-underline-offset: 0.2em; }
+.statement-line a:hover, .facts a:hover, .myths a:hover, ul.points a:hover, table.ruled a:hover, .note a:hover, .callout a:hover, .more p a:hover { color: var(--color-accent-deep); }

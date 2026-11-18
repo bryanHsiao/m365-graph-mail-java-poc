@@ -69,10 +69,10 @@
     <div class="ov-text">
     <h2 class="statement" id="overview-h">程式自己有身分，權限只到一個信箱</h2>
     <p class="statement-line">在 Entra ID 註冊一個應用程式、拿一組用戶端密碼；程式用它換 token，再帶 token 呼叫 Microsoft Graph 寄信讀信。能碰哪些信箱，由 Exchange 的「應用程式角色指派」限定在一個專用信箱。</p>
-    <p class="statement-line">Exchange Online 已經停用 IMAP／POP 的帳號密碼登入，用 JavaMail 帳密讀信的舊程式都得改。這份紀錄從申請 Microsoft 365 試用版開始，一步步做到 Java 8 程式以「應用程式身分」寄信、讀外部來信、解析中文內容、搬到「已處理」資料夾。所有指令、程式片段、截圖與踩過的坑都在這裡。</p>
+    <p class="statement-line">Exchange Online 已經停用 IMAP／POP 的<a href="https://learn.microsoft.com/zh-tw/exchange/clients-and-mobile-in-exchange-online/deprecation-of-basic-authentication-exchange-online">帳號密碼登入</a>，用 JavaMail 帳密讀信的舊程式都得改。這份紀錄從申請 Microsoft 365 試用版開始，一步步做到 Java 8 程式以「應用程式身分」寄信、讀外部來信、解析中文內容、搬到「已處理」資料夾。所有指令、程式片段、截圖與踩過的坑都在這裡。</p>
     </div>
     <dl class="facts">
-      <div><dt><span class="fact-k">為什麼要改</span>帳密登入走不通了</dt><dd>Exchange Online <a href="https://learn.microsoft.com/zh-tw/exchange/clients-and-mobile-in-exchange-online/deprecation-of-basic-authentication-exchange-online">自 2022 年 10 月起停用 IMAP／POP 帳密登入</a>，無法重新開啟；<a href="https://techcommunity.microsoft.com/blog/exchange/updated-exchange-online-smtp-auth-basic-authentication-deprecation-timeline/4489835">SMTP 帳密寄信也已宣布停用，目前暫緩到 2026 年底</a>。</dd></div>
+      <div><dt><span class="fact-k">為什麼要改</span>帳密登入走不通了</dt><dd>Exchange Online <a href="https://learn.microsoft.com/zh-tw/exchange/clients-and-mobile-in-exchange-online/deprecation-of-basic-authentication-exchange-online">自 2022 年 10 月起停用</a> IMAP／POP 帳密登入，無法重新開啟；<a href="https://techcommunity.microsoft.com/blog/exchange/updated-exchange-online-smtp-auth-basic-authentication-deprecation-timeline/4489835">SMTP 帳密寄信也已宣布停用，目前暫緩到 2026 年底</a>。</dd></div>
       <div><dt><span class="fact-k">這份做到</span>寄、讀、解析、搬移</dt><dd>Java 8（Domino 11 的 JVM 版本）只用 JDK 內建的 HTTP 與 JavaMail，不另掛 HTTP／JSON 函式庫。</dd></div>
       <div><dt><span class="fact-k">安全底線</span>只授權一個信箱</dt><dd>用 Exchange RBAC for Applications 限定範圍，並以反向測試確認：同一個應用程式去讀寫其他信箱，回 403 存取被拒。</dd></div>
     </dl>
@@ -510,7 +510,7 @@ intel-poc@contoso.onmicrosoft.com 收件匣 1 封
     </div>
     <dl class="myths">
       <div><dt>串公司內部的 AD，就能寄信讀信</dt><dd>內部 AD 只管使用者登入。Exchange Online 在雲端，程式要向雲端的 Entra ID 取得授權，內部 AD 給不了。</dd></div>
-      <div><dt>用帳號密碼走 IMAP 就好</dt><dd>Exchange Online 已永久停用 IMAP／POP 帳密登入，無法重新開啟。IMAP 也得用 OAuth。</dd></div>
+      <div><dt>用帳號密碼走 IMAP 就好</dt><dd>Exchange Online <a href="https://learn.microsoft.com/zh-tw/exchange/clients-and-mobile-in-exchange-online/deprecation-of-basic-authentication-exchange-online">已永久停用</a> IMAP／POP 帳密登入，無法重新開啟。IMAP 也得用 OAuth。</dd></div>
       <div><dt>改用 IMAP 可以省掉應用程式註冊</dt><dd>不行。<a href="https://learn.microsoft.com/zh-tw/exchange/client-developer/legacy-protocols/how-to-authenticate-an-imap-pop-smtp-application-by-using-oauth">IMAP 一樣要應用程式註冊與信箱授權</a>，而且要多開 993 port、寄信還得另外處理（見<a href="#deep">深入</a>的 IMAP 對照）。</dd></div>
       <div><dt>token 裡沒有權限，程式就不能用</dt><dd>用 Exchange 角色指派時，token 的 roles 本來就是空的，權限是 Exchange 收到請求時才查。要實際呼叫才知道。</dd></div>
       <div><dt>直接在 Entra 勾 Mail.Send、Mail.ReadWrite 最省事</dt><dd>那是整個租用戶所有信箱的權限，一旦用戶端密碼外流，所有信箱都曝險。用 Exchange 角色指派限定到專用信箱。</dd></div>
