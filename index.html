@@ -1,0 +1,2815 @@
+<!doctype html>
+<html lang="zh-TW">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Java × Graph 寄信讀信實作紀錄</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      /* ════════════════════════════════════════════ */
+      /* Anthropic / Claude 官方品牌風 design tokens     */
+      /* ════════════════════════════════════════════ */
+      :root {
+        --wrap-max: 1760px; /* 內容寬度：設定檔 tokens.layout.maxWidth 與「風格設定」改的就是它 */
+        --ivory: #faf9f5;
+        --paper: #ffffff;
+        --slate: #141413;
+        --clay: #d97757;
+        --clay-d: #b85c3e;
+        --oat: #e3dacc;
+        --olive: #788c5d;
+        --g100: #f0eee6;
+        --g200: #e6e3da;
+        --g300: #d1cfc5;
+        --g500: #87867f;
+        --g700: #3d3d3a;
+
+        --serif: ui-serif, Georgia, "Times New Roman", Times, serif;
+        --sans:
+          system-ui, -apple-system, "Segoe UI", Roboto, "PingFang TC",
+          "Noto Sans TC", Helvetica, Arial, sans-serif;
+        --mono: ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;
+
+        /* 狀態 semantic（warm-aligned，低調用） */
+        --green: #788c5d;
+        --green-soft: #eff1e8;
+        --green-border: #c8d2b8;
+        --red: #b85c3e;
+        --red-soft: #faebe3;
+        --red-border: #e8c4af;
+        --yellow: #c49845;
+        --yellow-soft: #f8efd9;
+        --yellow-border: #e8d4a0;
+        --olive-soft: #eff1e8;
+        --olive-border: #c8d2b8;
+        --clay-soft: #fbe9df;
+        --orange: #c9740a;
+        --orange-soft: #fbeedc;
+        --orange-border: #eccfa3;
+        --purple: #9333ea;
+        --purple-soft: #faf5ff;
+        --purple-border: #e9d5ff;
+
+        /* ── 兼容舊 component-library snippet ─────────── */
+        /* 通用元件用 --bg / --accent / --text 等命名、alias 到 Anthropic palette */
+        --bg: var(--ivory);
+        --bg-card: var(--paper);
+        --bg-soft: var(--g100);
+        --bg-soft-2: var(--g200);
+        --border: var(--g300);
+        --border-strong: var(--g500);
+        --text: var(--slate);
+        --text-muted: var(--g700);
+        --text-soft: var(--g500);
+        --accent: var(--clay);
+        --accent-soft: #fbe9df;
+        --accent-strong: var(--clay-d);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        scroll-behavior: smooth;
+      }
+      body {
+        margin: 0;
+        background: var(--ivory);
+        color: var(--slate);
+        font-family: var(--sans);
+        font-size: calc(16px * var(--fs, 1));
+        line-height: 1.55;
+        -webkit-font-smoothing: antialiased;
+        /* 保險絲：擋掉合成斜體與合成粗體。中文字體沒有義大利體與部分字重，
+           瀏覽器會機械傾斜／加粗漢字，筆畫變形。寧可不強調也不要變形字。 */
+        font-synthesis: none;
+      }
+
+      /* ════════════════════════════════════════════ */
+      /* Layout                                       */
+      /* ════════════════════════════════════════════ */
+      .wrap {
+        width: min(94vw, var(--wrap-max, 1760px)); /* --wrap-max：設定檔或「風格設定」的內容寬度 */
+        margin: 0 auto;
+        padding: 0 calc(32px * var(--dens, 1)) calc(140px * var(--dens, 1));
+      }
+      /* 長段落文字護欄：寬容器下避免一行上百字難讀（grid/卡片/表格不受限、吃滿寬） */
+      .intro,
+      p.prose,
+      .body-text {
+        max-width: 72ch;
+      }
+      /* 排印細節：pretty 讓段落尾行不留孤字、balance 讓多行標題長度接近。
+         現代瀏覽器都支援，成本為零。 */
+      p,
+      li,
+      td {
+        text-wrap: pretty;
+      }
+      h1,
+      h2,
+      h3 {
+        text-wrap: balance;
+      }
+
+      /* ════════════════════════════════════════════ */
+      /* Masthead / Hero                              */
+      /* ════════════════════════════════════════════ */
+      header.masthead {
+        padding: calc(80px * var(--dens, 1)) 0 calc(56px * var(--dens, 1));
+        border-bottom: 1.5px solid var(--g300);
+        margin-bottom: calc(12px * var(--dens, 1));
+      }
+      .eyebrow {
+        font-family: var(--mono);
+        font-size: calc(12px * var(--fs, 1));
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--g500);
+        margin-bottom: calc(18px * var(--dens, 1));
+        display: flex;
+        align-items: center;
+        gap: calc(12px * var(--dens, 1));
+      }
+      .eyebrow::before {
+        content: "";
+        width: 24px;
+        height: 1.5px;
+        background: var(--clay);
+      }
+      /* ⚠️ 選擇器要比 Tailwind preflight 高一級。它的 reset 把 h1 的 font-size
+         與 font-weight 設成 inherit，而它的樣式是 JS 動態注入、排在本區塊之後，
+         同優先級下會蓋過來——裸 `h1` 選擇器的字級會整個失效退回 16px。 */
+      body h1 {
+        font-family: var(--serif);
+        font-weight: 500;
+        font-size: calc(clamp(38px, 5.4vw, 62px) * var(--fs, 1));
+        line-height: 1.06;
+        letter-spacing: -0.018em;
+        margin: 0 0 calc(8px * var(--dens, 1));
+        max-width: 17ch;
+        color: var(--slate);
+      }
+      /* 中文標題強調 — 不要用斜體（漢字沒有斜體傳統，見上方 font-synthesis 註解）。
+         兩種手法依語氣選：B 換字重（預設、安靜）／ C 螢光筆（重、一頁最多一兩次）。 */
+      h1 em,
+      h2 em,
+      h3 em {
+        font-style: normal;
+        font-weight: 700;
+        color: var(--clay);
+      }
+      .hl {
+        background: linear-gradient(transparent 58%, #f7d9a0 58%);
+        font-style: normal;
+      }
+      /* 內文的 <em>：保險絲擋掉合成斜體後，中文 em 會跟正文一模一樣（強調消失）。
+         補字重讓它看得出來；英文字體有真的義大利體，斜體照樣保留。
+         （標題的 em 另有 700 ＋ clay，選擇器較具體、不受這條影響） */
+      em {
+        font-weight: 600;
+      }
+      .intro {
+        font-size: calc(16.5px * var(--fs, 1));
+        color: var(--g700);
+        margin: calc(22px * var(--dens, 1)) 0 0;
+        max-width: 620px;
+      }
+      .intro a {
+        color: var(--clay);
+        text-decoration-color: var(--oat);
+        text-underline-offset: 3px;
+      }
+      .intro a:hover {
+        text-decoration-color: var(--clay);
+      }
+
+      /* ════════════════════════════════════════════ */
+      /* TOC pills                                    */
+      /* ════════════════════════════════════════════ */
+      nav.toc {
+        display: flex;
+        flex-wrap: wrap;
+        gap: calc(8px * var(--dens, 1));
+        padding: calc(26px * var(--dens, 1)) 0 0;
+      }
+      nav.toc a {
+        font-size: calc(12.5px * var(--fs, 1));
+        padding: calc(7px * var(--dens, 1)) calc(14px * var(--dens, 1));
+        border: 1.5px solid var(--g300);
+        border-radius: 999px;
+        text-decoration: none;
+        color: var(--g700);
+        background: var(--paper);
+        transition:
+          border-color 120ms,
+          color 120ms;
+        display: inline-flex;
+        align-items: center;
+        gap: calc(7px * var(--dens, 1));
+      }
+      nav.toc a .n {
+        font-family: var(--mono);
+        font-size: calc(10px * var(--fs, 1));
+        color: var(--g500);
+      }
+      nav.toc a:hover {
+        border-color: var(--slate);
+        color: var(--slate);
+      }
+      nav.toc a:hover .n {
+        color: var(--clay);
+      }
+
+      /* ════════════════════════════════════════════ */
+      /* Section                                      */
+      /* ════════════════════════════════════════════ */
+      section {
+        margin-top: calc(72px * var(--dens, 1));
+        scroll-margin-top: 28px;
+      }
+      .sec-head {
+        display: flex;
+        align-items: baseline;
+        gap: calc(16px * var(--dens, 1));
+        margin-bottom: calc(10px * var(--dens, 1));
+      }
+      .sec-head .idx {
+        font-family: var(--mono);
+        font-size: calc(13px * var(--fs, 1));
+        color: var(--clay);
+        font-weight: 600;
+        width: 34px;
+        flex-shrink: 0;
+      }
+      .sec-head h2 {
+        font-family: var(--serif);
+        font-weight: 500;
+        font-size: calc(27px * var(--fs, 1));
+        margin: 0;
+        letter-spacing: -0.012em;
+        color: var(--slate);
+      }
+      .sec-head .count {
+        font-family: var(--mono);
+        font-size: calc(11px * var(--fs, 1));
+        color: var(--g500);
+        background: var(--g100);
+        padding: calc(2px * var(--dens, 1)) calc(8px * var(--dens, 1));
+        border-radius: 999px;
+      }
+      .sec-intro {
+        font-size: calc(14.5px * var(--fs, 1));
+        color: var(--g700);
+        max-width: 700px;
+        margin: 0 0 calc(24px * var(--dens, 1)) calc(50px * var(--dens, 1));
+      }
+      /* ── 窄螢幕溢出防護 ─────────────────────────
+         grid／flex 子項的 min-width 預設是 auto，裡面放 pre 或 table 會被內容
+         撐開 → 整頁橫向溢出。自訂 grid 容器時對子項加 min-width: 0，
+         或直接用 .grid-safe。（跑版不在標記裡，一定要用版面健檢量。） */
+      .grid-safe > * {
+        min-width: 0;
+      }
+      pre,
+      table {
+        max-width: 100%;
+      }
+      pre {
+        overflow-x: auto;
+      }
+
+      @media (max-width: 900px) {
+        .sec-intro {
+          margin-left: 0;
+        }
+        /* 區段內容的 50px 視覺軸縮排在手機上是純浪費 */
+        div[style*="margin-left: 50px"], /* 區段內容的 50px 視覺軸縮排在手機上是純浪費 */
+        div[style*="margin-left: calc(50px"] {
+          margin-left: 0 !important;
+        }
+        /* 長指令改換行而非橫捲：手機上捲軸比斷行難用 */
+        pre {
+          white-space: pre-wrap;
+          word-break: break-word;
+          font-size: calc(11px * var(--fs, 1));
+        }
+        /* 固定佈局讓表格文字換行，不把版面撐破 */
+        table {
+          table-layout: fixed;
+          width: 100%;
+        }
+        table th,
+        table td {
+          word-break: break-word;
+          overflow-wrap: anywhere;
+        }
+      }
+
+      /* ════════════════════════════════════════════ */
+      /* Cards                                        */
+      /* ════════════════════════════════════════════ */
+      .card {
+        background: var(--paper);
+        border: 1.5px solid var(--g300);
+        border-radius: 14px;
+        padding: calc(24px * var(--dens, 1));
+      }
+      .card-soft {
+        background: var(--g100);
+        border: 1.5px solid var(--g200);
+        border-radius: 10px;
+        padding: calc(16px * var(--dens, 1));
+      }
+
+      /* link card with hover */
+      a.link-card {
+        display: flex;
+        flex-direction: column;
+        background: var(--paper);
+        border: 1.5px solid var(--g300);
+        border-radius: 14px;
+        text-decoration: none;
+        color: inherit;
+        transition:
+          transform 150ms ease,
+          box-shadow 150ms ease,
+          border-color 150ms ease;
+        overflow: hidden;
+      }
+      a.link-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 10px 30px rgba(20, 20, 19, 0.1);
+        border-color: var(--slate);
+      }
+      .link-card .body {
+        padding: calc(18px * var(--dens, 1)) calc(20px * var(--dens, 1)) calc(16px * var(--dens, 1));
+      }
+      .link-card .title {
+        font-family: var(--serif);
+        font-size: calc(19px * var(--fs, 1));
+        font-weight: 500;
+        line-height: 1.22;
+        color: var(--slate);
+        margin-bottom: calc(7px * var(--dens, 1));
+        letter-spacing: -0.008em;
+      }
+      .link-card .desc {
+        font-size: calc(13.5px * var(--fs, 1));
+        color: var(--g700);
+        line-height: 1.5;
+      }
+      .link-card .file {
+        font-family: var(--mono);
+        font-size: calc(11px * var(--fs, 1));
+        color: var(--g500);
+        border-top: 1px solid var(--g100);
+        padding-top: calc(11px * var(--dens, 1));
+        margin-top: calc(14px * var(--dens, 1));
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .link-card .file .arrow {
+        transition: transform 150ms ease;
+        color: var(--g300);
+      }
+      a.link-card:hover .file {
+        color: var(--clay);
+      }
+      a.link-card:hover .file .arrow {
+        transform: translateX(3px);
+        color: var(--clay);
+      }
+
+      /* ════════════════════════════════════════════ */
+      /* Pills / Badges                               */
+      /* ════════════════════════════════════════════ */
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: calc(6px * var(--dens, 1));
+        padding: calc(4px * var(--dens, 1)) calc(10px * var(--dens, 1));
+        border: 1.5px solid var(--g300);
+        border-radius: 999px;
+        font-size: calc(11.5px * var(--fs, 1));
+        color: var(--g700);
+        background: var(--paper);
+      }
+      .pill.clay {
+        border-color: var(--clay);
+        color: var(--clay);
+      }
+      .pill.olive {
+        border-color: var(--olive);
+        color: var(--olive);
+      }
+
+      /* status badge — warm-aligned semantic */
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: calc(4px * var(--dens, 1));
+        padding: calc(3px * var(--dens, 1)) calc(10px * var(--dens, 1));
+        font-size: calc(11px * var(--fs, 1));
+        font-weight: 600;
+        font-family: var(--mono);
+        border-radius: 9999px;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+      .badge-green {
+        background: var(--green-soft);
+        color: var(--green);
+        border: 1px solid var(--green-border);
+      }
+      .badge-red {
+        background: var(--red-soft);
+        color: var(--red);
+        border: 1px solid var(--red-border);
+      }
+      .badge-yellow {
+        background: var(--yellow-soft);
+        color: var(--yellow);
+        border: 1px solid var(--yellow-border);
+      }
+      .badge-clay {
+        background: #fbe9df;
+        color: var(--clay-d);
+        border: 1px solid #f0c9b5;
+      }
+      .badge-oat {
+        background: var(--oat);
+        color: var(--g700);
+        border: 1px solid var(--g300);
+      }
+
+      /* ════════════════════════════════════════════ */
+      /* Footer                                       */
+      /* ════════════════════════════════════════════ */
+      footer.foot {
+        margin-top: calc(100px * var(--dens, 1));
+        border-top: 1.5px solid var(--g300);
+        padding-top: calc(36px * var(--dens, 1));
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: calc(20px * var(--dens, 1));
+        flex-wrap: wrap;
+        font-size: calc(13px * var(--fs, 1));
+        color: var(--g500);
+      }
+      footer.foot .k {
+        font-family: var(--serif);
+        font-style: italic;
+        color: var(--g700);
+        font-size: calc(15px * var(--fs, 1));
+      }
+      footer.foot a {
+        color: var(--clay);
+        text-decoration-color: var(--oat);
+        text-underline-offset: 3px;
+      }
+          /* ── 手機：收掉桌機的水平留白 ─────────────────
+         390px 螢幕上，容器 32px ＋ 卡片 24px 的左右內距吃掉 112px，加上 94vw
+         的寬度限制，文字只剩七成八。桌機上那是呼吸空間，手機上是純損失。
+         （2026-09-21 實測：清單項在 390px 只剩 218px 寬。）*/
+      @media (max-width: 640px) {
+        .wrap {
+          width: 100%;
+          padding-left: calc(14px * var(--dens, 1));
+          padding-right: calc(14px * var(--dens, 1));
+        }
+        .card {
+          padding-left: calc(16px * var(--dens, 1));
+          padding-right: calc(16px * var(--dens, 1));
+        }
+        ul,
+        ol {
+          padding-left: calc(20px * var(--dens, 1));
+        }
+      }
+      /* ═══ 本頁專用元件（pc- 命名空間，避免撞共用樣式） ═══ */
+      .pc-indent { margin-left: calc(50px * var(--dens, 1)); }
+      .pc-verdict {
+        font-family: var(--serif);
+        font-size: calc(22px * var(--fs, 1));
+        line-height: 1.45;
+        color: var(--slate);
+        max-width: 60ch;
+        margin: 0 0 calc(22px * var(--dens, 1));
+      }
+      .pc-metrics {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: calc(14px * var(--dens, 1));
+      }
+      .pc-metric {
+        background: var(--paper);
+        border: 1.5px solid var(--g300);
+        border-radius: 14px;
+        padding: calc(18px * var(--dens, 1)) calc(20px * var(--dens, 1));
+      }
+      .pc-metric .v {
+        font-family: var(--serif);
+        font-size: calc(38px * var(--fs, 1));
+        line-height: 1.1;
+        color: var(--slate);
+      }
+      .pc-metric .v small { font-size: calc(18px * var(--fs, 1)); color: var(--g500); }
+      .pc-metric .k { font-size: calc(13.5px * var(--fs, 1)); color: var(--g700); margin-top: calc(6px * var(--dens, 1)); }
+      .pc-metric.ok { border-color: var(--green-border); background: var(--green-soft); }
+      .pc-metric.warn { border-color: var(--yellow-border); background: var(--yellow-soft); }
+      .pc-flow4 {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: calc(10px * var(--dens, 1));
+        margin-top: calc(18px * var(--dens, 1));
+      }
+      .pc-flow4 .st {
+        background: var(--paper);
+        border: 1.5px solid var(--green-border);
+        border-radius: 10px;
+        padding: calc(12px * var(--dens, 1)) calc(14px * var(--dens, 1));
+        font-size: calc(14px * var(--fs, 1));
+        position: relative;
+      }
+      .pc-flow4 .st b { display: block; font-size: calc(15px * var(--fs, 1)); color: var(--slate); margin-bottom: calc(2px * var(--dens, 1)); }
+      .pc-flow4 .st span { color: var(--g700); font-size: calc(13px * var(--fs, 1)); }
+      .pc-flow4 .st::before {
+        content: "✓";
+        position: absolute;
+        right: 12px;
+        top: 10px;
+        color: var(--green);
+        font-weight: 700;
+      }
+
+      .pc-figure {
+        background: var(--paper);
+        border: 1.5px solid var(--g300);
+        border-radius: 14px;
+        padding: calc(16px * var(--dens, 1));
+        overflow-x: auto;
+      }
+      .pc-figure svg { display: block; min-width: 900px; width: 100%; height: auto; }
+      .pc-cover {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: calc(14px * var(--dens, 1));
+        margin-top: calc(16px * var(--dens, 1));
+      }
+      .pc-cover .card-soft h4 {
+        margin: 0 0 calc(8px * var(--dens, 1));
+        font-size: calc(14.5px * var(--fs, 1));
+        font-weight: 600;
+      }
+      .pc-cover ul { margin: 0; padding-left: calc(20px * var(--dens, 1)); font-size: calc(14px * var(--fs, 1)); color: var(--g700); }
+      .pc-cover li { margin: calc(3px * var(--dens, 1)) 0; }
+
+      .pc-stage {
+        display: grid;
+        grid-template-columns: 92px minmax(0, 1fr);
+        gap: calc(18px * var(--dens, 1));
+        margin-bottom: calc(26px * var(--dens, 1));
+      }
+      .pc-stage .when {
+        font-family: var(--mono);
+        font-size: calc(13px * var(--fs, 1));
+        color: var(--clay);
+        padding-top: calc(22px * var(--dens, 1));
+        text-align: right;
+      }
+      .pc-stage .body {
+        background: var(--paper);
+        border: 1.5px solid var(--g300);
+        border-left: 4px solid var(--clay);
+        border-radius: 14px;
+        padding: calc(20px * var(--dens, 1)) calc(22px * var(--dens, 1));
+      }
+      .pc-stage .body.ok { border-left-color: var(--green); }
+      .pc-stage .body.warn { border-left-color: var(--yellow); }
+      .pc-stage h3 {
+        font-family: var(--serif);
+        font-weight: 500;
+        font-size: calc(20px * var(--fs, 1));
+        margin: 0 0 calc(10px * var(--dens, 1));
+        display: flex;
+        align-items: center;
+        gap: calc(10px * var(--dens, 1));
+        flex-wrap: wrap;
+      }
+      .pc-stage ul.pts { margin: 0 0 calc(14px * var(--dens, 1)); padding-left: calc(20px * var(--dens, 1)); font-size: calc(14.5px * var(--fs, 1)); color: var(--g700); }
+      .pc-stage ul.pts li { margin: calc(4px * var(--dens, 1)) 0; }
+      .pc-shots {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+        gap: calc(12px * var(--dens, 1));
+        margin: calc(6px * var(--dens, 1)) 0 calc(4px * var(--dens, 1));
+      }
+      .pc-shots figure { margin: 0; }
+      .pc-shots img {
+        width: 100%;
+        border: 1px solid var(--g300);
+        border-radius: 8px;
+        cursor: zoom-in;
+        display: block;
+        background: var(--g100);
+      }
+      .pc-shots figcaption { font-size: calc(12.5px * var(--fs, 1)); color: var(--g700); margin-top: calc(6px * var(--dens, 1)); line-height: 1.45; }
+      .pc-shots figcaption b { color: var(--clay-d); font-family: var(--mono); font-weight: 600; margin-right: calc(4px * var(--dens, 1)); }
+      .pc-shots.wide { grid-template-columns: minmax(0, 1fr); }
+      pre.pc-term {
+        background: #1f1e1c;
+        color: #e8e6df;
+        border-radius: 10px;
+        padding: calc(14px * var(--dens, 1)) calc(16px * var(--dens, 1));
+        font-family: var(--mono);
+        font-size: calc(12.5px * var(--fs, 1));
+        line-height: 1.6;
+        margin: calc(10px * var(--dens, 1)) 0 calc(4px * var(--dens, 1));
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      pre.pc-term .ok { color: #a9c98a; }
+      pre.pc-term .bad { color: #f0a58a; }
+      pre.pc-term .dim { color: #9b9a93; }
+      .pc-termlabel { font-family: var(--mono); font-size: calc(11.5px * var(--fs, 1)); color: var(--g500); margin-top: calc(12px * var(--dens, 1)); }
+      .pc-note {
+        background: var(--yellow-soft);
+        border: 1px solid var(--yellow-border);
+        border-radius: 10px;
+        padding: calc(10px * var(--dens, 1)) calc(14px * var(--dens, 1));
+        font-size: calc(13.5px * var(--fs, 1));
+        color: var(--g700);
+        margin-top: calc(12px * var(--dens, 1));
+      }
+
+      .pc-issues { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: calc(13.5px * var(--fs, 1)); background: var(--paper); }
+      .pc-issues th {
+        text-align: left;
+        font-weight: 600;
+        color: var(--g700);
+        background: var(--g100);
+        padding: calc(10px * var(--dens, 1)) calc(12px * var(--dens, 1));
+        border-bottom: 1.5px solid var(--g300);
+      }
+      .pc-issues td { padding: calc(10px * var(--dens, 1)) calc(12px * var(--dens, 1)); border-bottom: 1px solid var(--g200); vertical-align: top; color: var(--g700); }
+      .pc-issues td:first-child { color: var(--slate); font-weight: 600; }
+      .pc-tablewrap { overflow-x: auto; border: 1.5px solid var(--g300); border-radius: 12px; }
+      .pc-tag { font-family: var(--mono); font-size: calc(11px * var(--fs, 1)); padding: calc(1px * var(--dens, 1)) calc(7px * var(--dens, 1)); border-radius: 999px; margin-right: calc(4px * var(--dens, 1)); white-space: nowrap; }
+      .pc-tag.env { background: var(--g100); color: var(--g700); border: 1px solid var(--g300); }
+      .pc-tag.ms { background: var(--yellow-soft); color: #8a6a24; border: 1px solid var(--yellow-border); }
+      .pc-tag.code { background: var(--red-soft); color: var(--red); border: 1px solid var(--red-border); }
+
+      .pc-todo { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: calc(12px * var(--dens, 1)); }
+      .pc-todo .card-soft { background: var(--paper); border-color: var(--g300); }
+      .pc-todo .card-soft h4 { margin: 0 0 calc(6px * var(--dens, 1)); font-size: calc(15px * var(--fs, 1)); display: flex; gap: calc(8px * var(--dens, 1)); align-items: center; }
+      .pc-todo .card-soft p { margin: 0; font-size: calc(13.5px * var(--fs, 1)); color: var(--g700); }
+
+      details.reveal {
+        background: var(--paper);
+        border: 1.5px solid var(--g300);
+        border-radius: 12px;
+        padding: calc(12px * var(--dens, 1)) calc(18px * var(--dens, 1));
+        margin-bottom: calc(12px * var(--dens, 1));
+      }
+      details.reveal summary { cursor: pointer; font-weight: 600; font-size: calc(14.5px * var(--fs, 1)); color: var(--slate); }
+      details.reveal[open] summary { margin-bottom: calc(10px * var(--dens, 1)); }
+      .pc-kv { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: calc(13.5px * var(--fs, 1)); }
+      .pc-kv td { padding: calc(7px * var(--dens, 1)) calc(10px * var(--dens, 1)); border-bottom: 1px solid var(--g200); vertical-align: top; word-break: break-word; }
+      .pc-kv td:first-child { color: var(--g500); }
+
+      .pc-lightbox {
+        position: fixed;
+        inset: 0;
+        background: rgba(20, 20, 19, 0.82);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        z-index: 10001;
+        cursor: zoom-out;
+        padding: calc(24px * var(--dens, 1));
+      }
+      .pc-lightbox.is-open { display: flex; }
+      .pc-lightbox img { max-width: 96vw; max-height: 92vh; border-radius: 8px; background: #fff; }
+
+      @media (max-width: 900px) {
+        .pc-indent { margin-left: 0; }
+        .pc-metrics, .pc-flow4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .pc-cover { grid-template-columns: minmax(0, 1fr); }
+        .pc-stage { grid-template-columns: minmax(0, 1fr); gap: calc(4px * var(--dens, 1)); }
+        .pc-stage .when { text-align: left; padding-top: 0; }
+        .pc-issues { min-width: 760px; }
+      }
+      /* ═══ 兩頁切換列 ═══ */
+      .pc-switch {
+        display: inline-flex;
+        gap: calc(4px * var(--dens, 1));
+        padding: calc(4px * var(--dens, 1));
+        background: var(--g100);
+        border: 1.5px solid var(--g200);
+        border-radius: 999px;
+        margin: calc(18px * var(--dens, 1)) 0 calc(22px * var(--dens, 1));
+        flex-wrap: wrap;
+      }
+      .pc-switch a {
+        display: inline-flex;
+        align-items: center;
+        gap: calc(8px * var(--dens, 1));
+        padding: calc(7px * var(--dens, 1)) calc(16px * var(--dens, 1));
+        border-radius: 999px;
+        font-size: calc(13.5px * var(--fs, 1));
+        color: var(--g700);
+        text-decoration: none;
+      }
+      .pc-switch a:hover { color: var(--slate); background: var(--paper); }
+      .pc-switch a.is-current {
+        background: var(--paper);
+        color: var(--slate);
+        font-weight: 600;
+        box-shadow: 0 1px 3px rgba(20, 20, 19, 0.12);
+      }
+      .pc-switch .lock {
+        font-size: calc(11px * var(--fs, 1));
+        font-family: var(--mono);
+        color: var(--clay-d);
+        background: var(--clay-soft);
+        border: 1px solid #f0c9b5;
+        border-radius: 999px;
+        padding: calc(1px * var(--dens, 1)) calc(8px * var(--dens, 1));
+      }
+
+      /* ═══ 會議準備頁 ═══ */
+      .pc-deadline {
+        display: flex;
+        align-items: center;
+        gap: calc(14px * var(--dens, 1));
+        background: var(--red-soft);
+        border: 1.5px solid var(--red-border);
+        border-radius: 12px;
+        padding: calc(14px * var(--dens, 1)) calc(18px * var(--dens, 1));
+        margin-bottom: calc(16px * var(--dens, 1));
+        font-size: calc(14.5px * var(--fs, 1));
+        color: var(--g700);
+        flex-wrap: wrap;
+      }
+      .pc-deadline b.date { font-family: var(--serif); font-size: calc(22px * var(--fs, 1)); color: var(--red); font-weight: 500; }
+      .pc-three { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: calc(14px * var(--dens, 1)); }
+      .pc-three .card h4 { margin: 0 0 calc(6px * var(--dens, 1)); font-size: calc(16px * var(--fs, 1)); font-family: var(--serif); font-weight: 500; }
+      .pc-three .card .n { font-family: var(--mono); color: var(--clay); font-size: calc(13px * var(--fs, 1)); }
+      .pc-three .card p { margin: 0; font-size: calc(14px * var(--fs, 1)); color: var(--g700); }
+
+      .pc-myth-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: calc(14px * var(--dens, 1)); }
+      .pc-myth-grid .item {
+        background: var(--paper);
+        border: 1.5px solid var(--g300);
+        border-radius: 12px;
+        overflow: hidden;
+      }
+      .pc-myth-grid .wrong {
+        background: var(--red-soft);
+        padding: calc(10px * var(--dens, 1)) calc(16px * var(--dens, 1));
+        font-size: calc(14px * var(--fs, 1));
+        color: var(--red);
+        border-bottom: 1px solid var(--red-border);
+      }
+      .pc-myth-grid .wrong::before { content: "誤解　"; font-weight: 700; }
+      .pc-myth-grid .right { padding: calc(12px * var(--dens, 1)) calc(16px * var(--dens, 1)); font-size: calc(14px * var(--fs, 1)); color: var(--g700); }
+      .pc-myth-grid .right::before { content: "實際　"; font-weight: 700; color: var(--green); }
+
+      .pc-chain {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: calc(26px * var(--dens, 1));
+        margin: calc(16px * var(--dens, 1)) 0 calc(6px * var(--dens, 1));
+      }
+      .pc-chain .step {
+        background: var(--paper);
+        border: 1.5px solid var(--g300);
+        border-radius: 12px;
+        padding: calc(14px * var(--dens, 1)) calc(16px * var(--dens, 1));
+        position: relative;
+        font-size: calc(13.5px * var(--fs, 1));
+        color: var(--g700);
+      }
+      .pc-chain .step b { display: block; color: var(--slate); font-size: calc(14.5px * var(--fs, 1)); margin-bottom: calc(4px * var(--dens, 1)); }
+      .pc-chain .step .who { font-family: var(--mono); font-size: calc(11px * var(--fs, 1)); color: var(--clay-d); }
+      .pc-chain .step:not(:last-child)::after {
+        content: "→";
+        position: absolute;
+        right: -21px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: var(--g500);
+        font-size: calc(18px * var(--fs, 1));
+      }
+
+      .pc-warns { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: calc(12px * var(--dens, 1)); margin-top: calc(14px * var(--dens, 1)); }
+      .pc-warns .card-soft { font-size: calc(13.5px * var(--fs, 1)); color: var(--g700); }
+      .pc-warns .card-soft b { display: block; color: var(--slate); margin-bottom: calc(4px * var(--dens, 1)); font-size: calc(14px * var(--fs, 1)); }
+
+      .pc-say {
+        border-left: 3px solid var(--clay);
+        background: var(--paper);
+        padding: calc(12px * var(--dens, 1)) calc(16px * var(--dens, 1));
+        border-radius: 0 10px 10px 0;
+        font-size: calc(14.5px * var(--fs, 1));
+        color: var(--slate);
+        margin-top: calc(14px * var(--dens, 1));
+        max-width: 90ch;
+      }
+      .pc-say::before { content: "可以這樣問 ─ "; color: var(--clay-d); font-weight: 600; }
+
+      .pc-qgrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: calc(14px * var(--dens, 1)); }
+      .pc-qgrid .card h4 { margin: 0 0 calc(10px * var(--dens, 1)); font-size: calc(15px * var(--fs, 1)); font-weight: 600; color: var(--slate); }
+      .pc-qgrid ol { margin: 0; padding-left: calc(26px * var(--dens, 1)); font-size: calc(14px * var(--fs, 1)); color: var(--g700); }
+      .pc-qgrid li { margin: calc(6px * var(--dens, 1)) 0; }
+      .pc-qgrid li.key { color: var(--slate); }
+      .pc-qgrid li.key::marker { color: var(--clay); font-weight: 700; }
+      .pc-qgrid .why { display: block; font-size: calc(12.5px * var(--fs, 1)); color: var(--g500); margin-top: calc(2px * var(--dens, 1)); }
+
+      .pc-tl-track { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0; position: relative; margin-top: calc(8px * var(--dens, 1)); }
+      .pc-tl-track .pt { padding: 0 calc(10px * var(--dens, 1)); position: relative; }
+      .pc-tl-track .pt .bar { height: 4px; background: var(--g300); margin: 0 calc(-10px * var(--dens, 1)) calc(14px * var(--dens, 1)); position: relative; }
+      .pc-tl-track .pt .bar::after {
+        content: "";
+        position: absolute;
+        left: 10px;
+        top: -6px;
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        background: var(--paper);
+        border: 3px solid var(--clay);
+      }
+      .pc-tl-track .pt.end .bar::after { border-color: var(--red); background: var(--red); }
+      .pc-tl-track .pt .d { font-family: var(--mono); font-size: calc(13px * var(--fs, 1)); color: var(--clay-d); font-weight: 600; }
+      .pc-tl-track .pt.end .d { color: var(--red); }
+      .pc-tl-track .pt .t { font-size: calc(13.5px * var(--fs, 1)); color: var(--g700); margin-top: calc(4px * var(--dens, 1)); }
+
+      @media (max-width: 900px) {
+        .pc-three, .pc-myth-grid, .pc-qgrid, .pc-warns { grid-template-columns: minmax(0, 1fr); }
+        .pc-chain { grid-template-columns: minmax(0, 1fr); gap: calc(22px * var(--dens, 1)); }
+        .pc-chain .step:not(:last-child)::after { content: "↓"; right: auto; left: 20px; top: auto; bottom: -21px; transform: none; }
+        .pc-tl-track { grid-template-columns: minmax(0, 1fr); gap: calc(14px * var(--dens, 1)); }
+        .pc-tl-track .pt .bar { display: none; }
+        .pc-tl-track .pt { border-left: 3px solid var(--clay); padding-left: calc(12px * var(--dens, 1)); }
+        .pc-tl-track .pt.end { border-left-color: var(--red); }
+      }
+
+      /* ═══ 修正：Tailwind 的 preflight 會把清單符號清掉，這裡補回來 ═══ */
+      .pc-qgrid ol { list-style: decimal; }
+      .pc-qgrid li::marker { color: var(--g500); font-family: var(--mono); }
+      .pc-stage ul.pts, .pc-cover ul, .pc-todo ul { list-style: disc; }
+      .pc-stage ul.pts li::marker, .pc-cover li::marker { color: var(--clay); }
+      /* 「可以這樣說」：陳述句用，跟提問句區分 */
+      .pc-say.say::before { content: "可以這樣說 ─ "; }
+      /* 中文不用斜體 */
+      footer.foot .k { font-style: normal; }
+      /* 六張成果卡排成 3 欄兩排；窄螢幕回到 2 欄 */
+      .pc-flow4.six { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      @media (max-width: 900px) {
+        .pc-flow4.six { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      }
+      /* 長的程式字串（用戶端 ID、網址）在窄螢幕可任意斷行，避免撐出橫向捲動 */
+      .pc-stage li code, .card-soft code, .pc-note code, .sec-intro code, .pc-cover code, details.reveal p code {
+        overflow-wrap: anywhere;
+        word-break: break-word;
+      }    </style>
+  <style id="vt-profile" data-profile-hash="da39a3ee5e"></style>
+</head>
+  <body>
+    <div class="wrap">
+      <header class="masthead" id="top">
+        <div class="eyebrow">Exchange Online · Microsoft Graph · Java 8 · 實作紀錄</div>
+        <h1>用 Java 透過 Graph 寄信讀信，<em>權限只開一個信箱</em></h1>
+        <p class="intro">
+          Exchange Online 已經停用 IMAP／POP 的帳號密碼登入，用 JavaMail 帳密讀信的舊程式都得改。這份紀錄從申請 Microsoft 365 試用版開始，一步步做到 Java 8 程式以「應用程式身分」寄信、讀外部來信、解析中文內容、搬到「已處理」資料夾，而且權限只限一個專用信箱，其他信箱一律被拒絕。所有指令、程式片段、截圖與踩過的坑都在這裡。
+        </p>
+        <nav class="toc">
+          <a href="#overview">一句話 <span class="n">01</span></a>
+          <a href="#analogy">類比 <span class="n">02</span></a>
+          <a href="#model">核心模型 <span class="n">03</span></a>
+          <a href="#walk">一步步做 <span class="n">04</span></a>
+          <a href="#myth">常見誤解 <span class="n">05</span></a>
+          <a href="#limits">邊界 <span class="n">06</span></a>
+          <a href="#deep">深入 <span class="n">07</span></a>
+        </nav>
+      </header>
+
+      <!-- 01 一句話 -->
+      <section id="overview">
+        <div class="sec-head">
+          <span class="idx">01</span>
+          <h2>一句話：程式自己有身分，權限只到一個信箱</h2>
+        </div>
+        <div class="pc-indent">
+          <p class="pc-verdict">
+            在 Entra ID 註冊一個應用程式、拿一組用戶端密碼；程式用它換 token，再帶 token 呼叫 Microsoft Graph 寄信讀信。能碰哪些信箱，由 Exchange 的「應用程式角色指派」限定在一個專用信箱。
+          </p>
+          <div class="pc-three">
+            <div class="card"><span class="n">為什麼要改</span><h4>帳密登入走不通了</h4><p>Exchange Online 自 2022 年 10 月起停用 IMAP／POP 帳密登入，無法重新開啟；SMTP 帳密寄信也已宣布停用，目前暫緩到 2026 年底。</p></div>
+            <div class="card"><span class="n">這份做到</span><h4>寄、讀、解析、搬移</h4><p>Java 8（Domino 11 的 JVM 版本）只用 JDK 內建的 HTTP 與 JavaMail，不另掛 HTTP／JSON 函式庫。</p></div>
+            <div class="card"><span class="n">安全底線</span><h4>只授權一個信箱</h4><p>用 Exchange RBAC for Applications 限定範圍，並以反向測試確認：同一個應用程式去讀寫其他信箱，回 403 存取被拒。</p></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 02 類比 -->
+      <section id="analogy">
+        <div class="sec-head">
+          <span class="idx">02</span>
+          <h2>類比：外包廠商的識別證與門禁</h2>
+        </div>
+        <p class="sec-intro">把程式想成一位常駐的外包人員，進大樓要識別證、進房間要門禁。</p>
+        <div class="pc-indent">
+          <div class="pc-tablewrap">
+            <table class="pc-issues">
+              <colgroup><col style="width: 26%" /><col style="width: 30%" /><col style="width: 44%" /></colgroup>
+              <thead><tr><th>這份 PoC 的東西</th><th>類比</th><th>說明</th></tr></thead>
+              <tbody>
+                <tr><td>Entra 應用程式註冊</td><td>外包人員的人事資料</td><td>證明「有這個人」，本身不給任何房間的權限</td></tr>
+                <tr><td>用戶端密碼</td><td>識別證晶片</td><td>拿它去換當天的通行證；有到期日，外流就能被冒用</td></tr>
+                <tr><td>token</td><td>當天的臨時通行證</td><td>約 1 小時有效，到期再換一張</td></tr>
+                <tr><td>Exchange 角色指派＋管理範圍</td><td>門禁只開一間房</td><td>決定這個人能進哪幾個信箱；這份 PoC 只開 <code>intel-poc</code></td></tr>
+                <tr><td>Entra 的 Graph Mail.* 應用程式權限</td><td>萬能鑰匙</td><td>整棟樓所有房間都能進；方便，但不建議（見第 05 段）</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="pc-note"><b>類比失準的地方</b>：通行證上通常印著能進哪些區域，但用 Exchange 角色指派時，token 裡<b>看不到</b>任何權限（roles 是空的），權限是 Exchange 收到請求時才查。所以「token 裡沒有權限」不代表程式不能用，要實際呼叫才知道。</div>
+        </div>
+      </section>
+
+      <!-- 03 核心模型 -->
+      <section id="model">
+        <div class="sec-head">
+          <span class="idx">03</span>
+          <h2>核心模型：誰跟誰講話、權限從哪來</h2>
+        </div>
+        <p class="sec-intro">程式只跟兩個 Microsoft 雲端端點溝通，全部走 HTTPS 443；主機只需要對外連出，不用開任何對內的 port。</p>
+        <div class="pc-indent">
+          <div class="pc-figure">
+            <svg viewBox="0 0 1120 470" role="img" aria-label="架構：Java 程式、Entra ID、Microsoft Graph、Exchange Online 共用信箱與外部寄件者">
+              <defs>
+                <marker id="g-arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#3d3d3a" /></marker>
+                <marker id="g-arr-c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#d97757" /></marker>
+              </defs>
+              <rect x="30" y="170" width="220" height="100" rx="12" fill="#fbe9df" stroke="#d97757" stroke-width="1.5" />
+              <text x="140" y="205" text-anchor="middle" font-size="17" font-weight="600" fill="#141413">Java 程式</text>
+              <text x="140" y="230" text-anchor="middle" font-size="13" fill="#3d3d3a">Java 8，只用 JDK＋JavaMail</text>
+              <text x="140" y="252" text-anchor="middle" font-size="13" fill="#3d3d3a">可放進 Domino agent</text>
+              <rect x="370" y="40" width="250" height="84" rx="12" fill="#ffffff" stroke="#87867f" stroke-width="1.5" />
+              <text x="495" y="74" text-anchor="middle" font-size="16" font-weight="600" fill="#141413">Entra ID</text>
+              <text x="495" y="100" text-anchor="middle" font-size="12.5" fill="#3d3d3a">login.microsoftonline.com</text>
+              <rect x="370" y="190" width="250" height="84" rx="12" fill="#ffffff" stroke="#87867f" stroke-width="1.5" />
+              <text x="495" y="224" text-anchor="middle" font-size="16" font-weight="600" fill="#141413">Microsoft Graph</text>
+              <text x="495" y="250" text-anchor="middle" font-size="12.5" fill="#3d3d3a">graph.microsoft.com</text>
+              <rect x="740" y="150" width="350" height="190" rx="12" fill="#ffffff" stroke="#141413" stroke-width="1.5" />
+              <text x="915" y="178" text-anchor="middle" font-size="15" font-weight="600" fill="#141413">Exchange Online 共用信箱</text>
+              <text x="915" y="198" text-anchor="middle" font-size="12" fill="#3d3d3a">intel-poc@contoso.onmicrosoft.com</text>
+              <rect x="765" y="212" width="300" height="34" rx="7" fill="#f0eee6" stroke="#d1cfc5" />
+              <text x="915" y="234" text-anchor="middle" font-size="13.5" fill="#141413">收件匣（待處理）</text>
+              <rect x="765" y="252" width="300" height="34" rx="7" fill="#eff1e8" stroke="#c8d2b8" />
+              <text x="915" y="274" text-anchor="middle" font-size="13.5" fill="#141413">情資已處理（程式自動建立）</text>
+              <rect x="765" y="292" width="300" height="34" rx="7" fill="#f0eee6" stroke="#d1cfc5" />
+              <text x="915" y="314" text-anchor="middle" font-size="13.5" fill="#141413">寄件備份</text>
+              <rect x="805" y="30" width="220" height="60" rx="12" fill="#ffffff" stroke="#87867f" stroke-width="1.5" stroke-dasharray="5 4" />
+              <text x="915" y="56" text-anchor="middle" font-size="14" font-weight="600" fill="#141413">外部寄件者</text>
+              <text x="915" y="76" text-anchor="middle" font-size="12" fill="#3d3d3a">例如情資通報、監控告警來信</text>
+              <rect x="370" y="360" width="250" height="70" rx="12" fill="#ffffff" stroke="#87867f" stroke-width="1.5" />
+              <text x="495" y="390" text-anchor="middle" font-size="14" font-weight="600" fill="#141413">收件者信箱</text>
+              <text x="495" y="413" text-anchor="middle" font-size="12" fill="#3d3d3a">系統通知信的收件人</text>
+              <line x1="250" y1="195" x2="368" y2="100" stroke="#d97757" stroke-width="2" marker-end="url(#g-arr-c)" />
+              <text x="40" y="154" font-size="13" fill="#b85c3e">① 用用戶端密碼換 token</text>
+              <line x1="250" y1="232" x2="368" y2="232" stroke="#3d3d3a" stroke-width="2" marker-end="url(#g-arr)" />
+              <text x="262" y="222" font-size="12.5" fill="#3d3d3a">② 帶 token 呼叫</text>
+              <line x1="620" y1="232" x2="738" y2="232" stroke="#3d3d3a" stroke-width="2" marker-end="url(#g-arr)" />
+              <text x="628" y="222" font-size="12" fill="#3d3d3a">寄／列／取／搬</text>
+              <line x1="915" y1="90" x2="915" y2="148" stroke="#87867f" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#g-arr)" />
+              <line x1="765" y1="320" x2="622" y2="392" stroke="#3d3d3a" stroke-width="2" marker-end="url(#g-arr)" />
+              <text x="668" y="420" font-size="12" fill="#3d3d3a">寄出的信</text>
+              <rect x="30" y="300" width="300" height="140" rx="10" fill="none" stroke="#d1cfc5" stroke-width="1.5" stroke-dasharray="6 5" />
+              <text x="46" y="326" font-size="13" font-weight="600" fill="#141413">權限從哪來</text>
+              <text x="46" y="352" font-size="12.5" fill="#788c5d">Exchange 角色指派（建議）</text>
+              <text x="46" y="372" font-size="12" fill="#3d3d3a">限定管理範圍，只含專用信箱</text>
+              <text x="46" y="400" font-size="12.5" fill="#87867f">Entra Graph Mail.* 權限（不建議）</text>
+              <text x="46" y="420" font-size="12" fill="#87867f">整個租用戶的信箱都能碰</text>
+            </svg>
+          </div>
+          <h3 style="font-family: var(--serif); font-weight: 500; font-size: calc(19px * var(--fs, 1)); margin: calc(24px * var(--dens, 1)) 0 calc(10px * var(--dens, 1))">兩種授權方式比較</h3>
+          <div class="pc-tablewrap">
+            <table class="pc-issues">
+              <colgroup><col style="width: 18%" /><col style="width: 41%" /><col style="width: 41%" /></colgroup>
+              <thead><tr><th></th><th>Exchange 角色指派（RBAC for Applications）</th><th>Entra 的 Graph 應用程式權限</th></tr></thead>
+              <tbody>
+                <tr><td>範圍</td><td>可限定到指定信箱（管理範圍）</td><td>整個租用戶所有信箱</td></tr>
+                <tr><td>在哪設定</td><td>Exchange Online PowerShell（沒有網頁介面）</td><td>Entra 系統管理中心網頁，勾選後授與管理員同意</td></tr>
+                <tr><td>token 裡看得到</td><td>看不到（roles 是空的）</td><td>看得到 Mail.ReadWrite、Mail.Send</td></tr>
+                <tr><td>生效時間</td><td>指派後 30 分鐘到 2 小時；新租用戶可能更久</td><td>幾乎立即</td></tr>
+                <tr><td>這份 PoC</td><td>正式採用，並通過反向測試</td><td>只在角色指派卡住時暫時用過，之後撤銷並移除</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="pc-note"><b>兩者不要同時開</b>：權限是取聯集。Entra 那邊開了 Mail.* 應用程式權限，Exchange 這邊限定得再嚴也沒用。</div>
+        </div>
+      </section>
+
+      <!-- 04 一步步做 -->
+      <section id="walk">
+        <div class="sec-head">
+          <span class="idx">04</span>
+          <h2>一步步做</h2>
+          <span class="count">7 步</span>
+        </div>
+        <p class="sec-intro">以下指令都在 Windows PowerShell 5.1 驗證過。範例值：租用戶 <code>contoso.onmicrosoft.com</code>、管理員 <code>admin@contoso.onmicrosoft.com</code>、專用信箱 <code>intel-poc@contoso.onmicrosoft.com</code>、應用程式名稱 <code>IntelPoc Graph</code>，請換成你自己的。點截圖可放大。</p>
+        <div class="pc-indent">
+
+          <div class="pc-chain">
+            <div class="step"><span class="who">雲端</span><b>① 申請試用版</b>取得租用戶與全域管理員</div>
+            <div class="step"><span class="who">Entra</span><b>② 註冊應用程式</b>服務主體、用戶端密碼</div>
+            <div class="step"><span class="who">Exchange</span><b>③ 信箱與授權</b>共用信箱、管理範圍、角色指派</div>
+            <div class="step"><span class="who">程式</span><b>④～⑦ 寫程式並測試</b>寄、讀、解析、搬移、反向測試</div>
+          </div>
+
+          <!-- 準備 -->
+          <div class="pc-stage">
+            <div class="when">準備</div>
+            <div class="body">
+              <h3>需要的東西</h3>
+              <div class="pc-tablewrap">
+                <table class="pc-issues">
+                  <colgroup><col style="width: 26%" /><col style="width: 74%" /></colgroup>
+                  <tbody>
+                    <tr><td>Microsoft 365 租用戶</td><td>這份用商務基本版（Business Basic）試用，一個月免費；要有全域管理員帳號</td></tr>
+                    <tr><td>PowerShell 模組</td><td><code>ExchangeOnlineManagement</code>（設定 Exchange 用）。Entra 段用 <code>Invoke-RestMethod</code> 直接呼叫 REST，不需要 Microsoft.Graph 模組</td></tr>
+                    <tr><td>Java</td><td>JDK 8（要和 Domino 11 的 JVM 版本一致）</td></tr>
+                    <tr><td>JavaMail</td><td><code>javax.mail.jar</code>（1.4 以上即可，只用來解析 MIME；這份用 1.6.2）</td></tr>
+                    <tr><td>網路</td><td>主機能對外連 443：<code>login.microsoftonline.com</code>、<code>graph.microsoft.com</code></td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- 步驟 1 -->
+          <div class="pc-stage">
+            <div class="when">步驟 1</div>
+            <div class="body">
+              <h3>申請 Microsoft 365 商務基本版試用</h3>
+              <ul class="pts">
+                <li>選「商務」類別的<b>商務基本版</b>；個人／家用版沒有 Entra ID 與 Exchange 系統管理功能，做不了</li>
+                <li>聯絡信箱用個人信箱即可；不要用公司信箱，公司網域若已有 Microsoft 365，試用可能被加進公司的租用戶</li>
+                <li><b>網域名稱（xxxx.onmicrosoft.com）建立後不能改</b>，取個看得出是測試用的名字</li>
+                <li>試用期滿會自動轉成付費年約，記下到期日，在系統管理中心 → 帳單 → 您的產品取消</li>
+                <li>第一次登入會要求設定多重要素驗證（Microsoft Authenticator）</li>
+              </ul>
+              <div class="pc-shots">
+                <figure><img src="assets/signup-trial.jpg" alt="試用訂閱頁" /><figcaption><b>1</b>試用訂閱內容：數量 1，今天應付 $0，並註明試用結束日</figcaption></figure>
+              </div>
+            </div>
+          </div>
+
+          <!-- 步驟 2 -->
+          <div class="pc-stage">
+            <div class="when">步驟 2</div>
+            <div class="body">
+              <h3>Entra：註冊應用程式、建立服務主體、產生用戶端密碼</h3>
+              <ul class="pts">
+                <li>用「代碼登入」：畫面顯示一組代碼，到 <code>https://login.microsoft.com/device</code> 輸入後用全域管理員登入。比跳出登入視窗穩定（內嵌終端機裡，Windows 的登入視窗常被藏到其他視窗後面）</li>
+                <li>用 Microsoft 官方的公用用戶端「Microsoft Graph Command Line Tools」（<code>14d82eec-204b-4c2f-b7e8-296a70dab67e</code>）代表管理員操作；第一次登入要勾「代表您的組織同意」</li>
+                <li><b>不要</b>在這個應用程式上加 Graph 的 Mail.* 應用程式權限（理由見第 03 段）</li>
+                <li>用戶端密碼只會在建立當下回傳一次，直接寫進設定檔，不要印在畫面上</li>
+              </ul>
+              <div class="pc-termlabel">代碼登入取得管理員 token（PowerShell 5.1）</div>
+<pre class="pc-term">$clientId = "14d82eec-204b-4c2f-b7e8-296a70dab67e"   <span class="dim"># Microsoft Graph Command Line Tools</span>
+$scope = "https://graph.microsoft.com/Application.ReadWrite.All https://graph.microsoft.com/Domain.Read.All"
+$dc = Invoke-RestMethod -Method Post -Uri "https://login.microsoftonline.com/organizations/oauth2/v2.0/devicecode" `
+    -Body @{ client_id = $clientId; scope = $scope }
+Write-Host "到 $($dc.verification_uri) 輸入代碼：$($dc.user_code)"
+do {
+    Start-Sleep -Seconds $dc.interval
+    try {
+        $tok = Invoke-RestMethod -Method Post -Uri "https://login.microsoftonline.com/organizations/oauth2/v2.0/token" -Body @{
+            grant_type = "urn:ietf:params:oauth:grant-type:device_code"; client_id = $clientId; device_code = $dc.device_code }
+    } catch {
+        $err = ($_.ErrorDetails.Message | ConvertFrom-Json).error
+        if ($err -ne "authorization_pending") { throw }   <span class="dim"># 還沒登入完就繼續等</span>
+    }
+} until ($tok)
+$headers = @{ Authorization = "Bearer $($tok.access_token)" }</pre>
+              <div class="pc-termlabel">建立應用程式、服務主體與用戶端密碼</div>
+<pre class="pc-term"><span class="dim"># Windows PowerShell 5.1 送字串 body 會用 ISO-8859-1，中文會壞，所以轉成 UTF-8 bytes</span>
+function Invoke-Graph($method, $uri, $body) {
+    if ($null -eq $body) { return Invoke-RestMethod -Method $method -Uri "https://graph.microsoft.com$uri" -Headers $headers }
+    $bytes = [Text.Encoding]::UTF8.GetBytes(($body | ConvertTo-Json -Depth 5))
+    Invoke-RestMethod -Method $method -Uri "https://graph.microsoft.com$uri" -Headers $headers `
+        -Body $bytes -ContentType "application/json; charset=utf-8"
+}
+$app = Invoke-Graph POST "/v1.0/applications" @{ displayName = "IntelPoc Graph"; signInAudience = "AzureADMyOrg" }
+$sp  = Invoke-Graph POST "/v1.0/servicePrincipals" @{ appId = $app.appId }   <span class="dim"># 剛建立的應用程式可能要等幾秒才查得到，失敗就重試</span>
+$end = (Get-Date).AddMonths(6).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+$cred = Invoke-Graph POST "/v1.0/applications/$($app.id)/addPassword" @{
+    passwordCredential = @{ displayName = "graph-poc"; endDateTime = $end } }
+<span class="dim"># $cred.secretText 只會出現這一次：直接寫進設定檔（變數別取名 $pwd，那是 PowerShell 內建的目前目錄）
+# 記下 $app.appId（應用程式識別碼）與 $sp.id（服務主體的物件識別碼），下一步要用</span></pre>
+              <div class="pc-shots">
+                <figure><img src="assets/device-login-ok.png" alt="代碼登入成功" /><figcaption><b>2</b>在瀏覽器輸入代碼、登入完成後的畫面</figcaption></figure>
+              </div>
+            </div>
+          </div>
+
+          <!-- 步驟 3 -->
+          <div class="pc-stage">
+            <div class="when">步驟 3</div>
+            <div class="body">
+              <h3>Exchange：共用信箱、管理範圍、角色指派</h3>
+              <ul class="pts">
+                <li>Windows PowerShell 5.1 的 <code>Connect-ExchangeOnline</code> <b>沒有 <code>-Device</code></b>：同樣用代碼登入拿 token（公用用戶端改成 Exchange Online PowerShell <code>fb78d390-0c51-40cd-8e17-fdbfab77341b</code>，scope 為 <code>https://outlook.office365.com/.default</code>），再用 <code>-AccessToken</code> 連線</li>
+                <li>新租用戶第一次要 <code>Enable-OrganizationCustomization</code> 才能建自訂管理範圍</li>
+                <li>專用信箱用<b>共用信箱</b>：不需要授權、沒有密碼、不能直接登入</li>
+                <li><code>New-ServicePrincipal</code> 的 <code>-ObjectId</code> 要填<b>企業應用程式（服務主體）</b>的物件識別碼，不是應用程式註冊頁上的那個，這裡最常填錯</li>
+              </ul>
+<pre class="pc-term">Connect-ExchangeOnline -AccessToken $exoToken -UserPrincipalName admin@contoso.onmicrosoft.com -ShowBanner:$false
+
+if ((Get-OrganizationConfig).IsDehydrated) { Enable-OrganizationCustomization }   <span class="dim"># 新租用戶才需要</span>
+
+New-Mailbox -Shared -Name intel-poc -Alias intel-poc -DisplayName "情資系統 PoC" `
+    -PrimarySmtpAddress intel-poc@contoso.onmicrosoft.com
+
+New-ServicePrincipal -AppId &lt;AppId&gt; -ObjectId &lt;服務主體物件識別碼&gt; -DisplayName "IntelPoc Graph"
+
+New-ManagementScope -Name IntelPocMailbox `
+    -RecipientRestrictionFilter "PrimarySmtpAddress -eq 'intel-poc@contoso.onmicrosoft.com'"
+
+New-ManagementRoleAssignment -Name IntelPoc-Mail.Send      -App &lt;AppId&gt; -Role "Application Mail.Send"      -CustomResourceScope IntelPocMailbox
+New-ManagementRoleAssignment -Name IntelPoc-Mail.ReadWrite -App &lt;AppId&gt; -Role "Application Mail.ReadWrite" -CustomResourceScope IntelPocMailbox
+
+Test-ServicePrincipalAuthorization -Identity &lt;AppId&gt; -Resource intel-poc@contoso.onmicrosoft.com</pre>
+              <div class="pc-termlabel">授權檢查的預期結果</div>
+<pre class="pc-term">RoleName                   GrantedPermissions InScope
+--------                   ------------------ -------
+Application Mail.Send      Mail.Send          <span class="ok">True</span>
+Application Mail.ReadWrite Mail.ReadWrite     <span class="ok">True</span></pre>
+              <div class="pc-note"><b>新租用戶的坑</b>：剛做完組織自訂時，角色指派可能回「您沒有建立、變更或移除管理角色指派的存取權。您必須在階層中獲得對管理角色或其父代之沒有範圍限制的委派角色指派」。全域管理員身分其實沒問題（Organization Management 的成員是代表全域管理員的 <code>TenantAdmins_xxx</code> 群組），是委派權限還沒同步。這份 PoC 當晚失敗、<b>隔天重跑就成功</b>，等就對了。</div>
+            </div>
+          </div>
+
+          <!-- 步驟 4 -->
+          <div class="pc-stage">
+            <div class="when">步驟 4</div>
+            <div class="body">
+              <h3>Java：取 token、寄信、列信、取原始 MIME、搬移</h3>
+              <ul class="pts">
+                <li>只用 <code>HttpURLConnection</code>；JSON 用一支百來行的小解析器，不另掛 jar（Domino 上加 jar 很麻煩）</li>
+                <li>明確指定 TLS 1.2（IBM J9 的 "TLS" 預設不一定含 1.2）；憑證信任沿用 JVM 的 cacerts，<b>不要做「全部信任」</b></li>
+                <li>token 快取到到期前 5 分鐘；遇到 429／503 依 <code>Retry-After</code> 重試；遇到 401 丟掉 token 重拿一次</li>
+                <li><b>一定要設定 Accept 標頭</b>：<code>HttpURLConnection</code> 預設的 Accept 含有單獨的 <code>*</code>，Graph 的讀取請求會回 406（寄信不檢查，所以很難發現）</li>
+                <li>讀信不用 Graph 的 JSON 內文，而是取原始 MIME 交給 JavaMail 解析：舊程式解析 <code>javax.mail.Message</code> 的邏輯幾乎不用改</li>
+              </ul>
+              <div class="pc-termlabel">取得 token（client credentials）</div>
+<pre class="pc-term">String form = "client_id=" + enc(clientId)
+        + "&amp;client_secret=" + enc(clientSecret)
+        + "&amp;scope=" + enc("https://graph.microsoft.com/.default")
+        + "&amp;grant_type=client_credentials";
+<span class="dim">// POST https://login.microsoftonline.com/{tenantId}/oauth2/v2.0/token
+// 回應的 access_token 與 expires_in 存起來，到期前 5 分鐘內才重新申請</span></pre>
+              <div class="pc-termlabel">送出請求（節錄：TLS 1.2、Accept、重試）</div>
+<pre class="pc-term">HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection(proxy);
+if (c instanceof HttpsURLConnection) {
+    SSLContext ctx = SSLContext.getInstance("TLSv1.2");
+    ctx.init(null, null, null);                        <span class="dim">// 沿用 JVM 的 cacerts</span>
+    ((HttpsURLConnection) c).setSSLSocketFactory(ctx.getSocketFactory());
+}
+c.setRequestMethod(method);
+c.setRequestProperty("Accept", url.contains("/$value") ? "*/*" : "application/json");   <span class="dim">// 少了這行，GET 會 406</span>
+c.setRequestProperty("Authorization", "Bearer " + getAccessToken());
+<span class="dim">// 不要用 setFixedLengthStreamingMode：串流模式下遇到 401，JDK 會丟掉回應內容，讀不到 AADSTS 錯誤說明</span>
+int status = c.getResponseCode();
+if (status == 429 || status == 503 || status == 504) { <span class="dim">/* 依 Retry-After 等待後重試，最多 3 次 */</span> }
+if (status == 401) { <span class="dim">/* 丟掉快取的 token、重拿一次再試 */</span> }</pre>
+              <div class="pc-termlabel">各動作對應的 Graph 端點</div>
+              <div class="pc-tablewrap">
+                <table class="pc-issues">
+                  <colgroup><col style="width: 16%" /><col style="width: 44%" /><col style="width: 40%" /></colgroup>
+                  <thead><tr><th>動作</th><th>端點</th><th>重點</th></tr></thead>
+                  <tbody>
+                    <tr><td>寄信</td><td><code>POST /users/{信箱}/sendMail</code></td><td>body 為 JSON，HTML 內文、附件用 base64（合計約 3MB 以內）、<code>saveToSentItems: true</code>；成功回 202</td></tr>
+                    <tr><td>列信</td><td><code>GET /users/{信箱}/mailFolders/inbox/messages</code></td><td><code>$select</code> 只取需要的欄位；<code>$orderby=receivedDateTime asc</code> 由舊到新；跟著 <code>@odata.nextLink</code> 翻頁</td></tr>
+                    <tr><td>只讀未讀</td><td>加 <code>$filter=receivedDateTime ge 1900-01-01T00:00:00Z and isRead eq false</code></td><td><code>$orderby</code> 的欄位必須先出現在 <code>$filter</code> 裡，否則回 InefficientFilter</td></tr>
+                    <tr><td>取原始信</td><td><code>GET /users/{信箱}/messages/{id}/$value</code></td><td>回傳 RFC 822 MIME，交給 <code>new MimeMessage(session, inputStream)</code></td></tr>
+                    <tr><td>找／建資料夾</td><td><code>GET /mailFolders?$filter=displayName eq '情資已處理'</code>；沒有就 <code>POST /mailFolders</code></td><td>中文資料夾名稱沒問題；單引號要寫成兩個</td></tr>
+                    <tr><td>搬移</td><td><code>POST /users/{信箱}/messages/{id}/move</code></td><td>body <code>{"destinationId": "資料夾 id"}</code>；<b>搬移後信件 id 會變</b></td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="pc-termlabel">寄信的 JSON</div>
+<pre class="pc-term">{
+  "message": {
+    "subject": "[情資系統 PoC] Graph 寄信測試（TLP:AMBER 假情資）",
+    "body": { "contentType": "HTML", "content": "&lt;p&gt;……&lt;/p&gt;" },
+    "toRecipients": [ { "emailAddress": { "address": "someone@contoso.com" } } ],
+    "attachments": [ {
+      "@odata.type": "#microsoft.graph.fileAttachment",
+      "name": "測試附件-假情資.csv", "contentType": "text/csv", "contentBytes": "77u/5oyH5qiZLC..."
+    } ]
+  },
+  "saveToSentItems": true
+}</pre>
+              <div class="pc-termlabel">解析 MIME（沿用 JavaMail 的寫法）</div>
+<pre class="pc-term">MimeMessage msg = new MimeMessage(Session.getInstance(new Properties()), new ByteArrayInputStream(raw));
+String subject = msg.getSubject();                    <span class="dim">// RFC 2047 中文主旨自動解碼</span>
+<span class="dim">// multipart/alternative 先取 text/plain，沒有才把 HTML 轉成文字（有 jsoup 就用 jsoup）
+// 附件檔名：Outlook 常用 =?UTF-8?B?...?= 編碼，JavaMail 1.4 不會自動解，要 MimeUtility.decodeText(part.getFileName())</span></pre>
+            </div>
+          </div>
+
+          <!-- 步驟 5 -->
+          <div class="pc-stage">
+            <div class="when">步驟 5</div>
+            <div class="body ok">
+              <h3>測試：寄信、讀信解析、外部來信、搬移</h3>
+              <ul class="pts">
+                <li>專用信箱寄一封給自己，再讀出來解析：中文主旨、HTML 表格、中文檔名附件</li>
+                <li>從 Gmail 等外部信箱寄信進來：會直接進收件匣（這份實測沒有被當成垃圾郵件）；Gmail 的信同時有純文字與 HTML，取純文字那份</li>
+                <li>處理完搬到「情資已處理」，收件匣清空</li>
+                <li>只用自編的假資料測試（IP 用文件保留的 198.51.100.0/24、網域用 example），不要把真實資料放進試用租用戶</li>
+              </ul>
+<pre class="pc-term">== 1. 取得 token
+取得 token 成功，約 59 分鐘後到期
+token 內的權限（roles）：<span class="dim">無（用 Exchange 角色指派時本來就是空的）</span>
+== 2. 寄測試信（中文主旨、HTML 表格、中文檔名附件）
+<span class="ok">已由 intel-poc@contoso.onmicrosoft.com 寄出測試信</span>
+== 3. 列出收件匣
+intel-poc@contoso.onmicrosoft.com 收件匣 1 封（由舊到新）
+== 4. 讀信並解析
+   附件：[測試附件-假情資.csv]
+   內文：TLP:AMBER　以下為測試用假情資，請勿採取行動。
+         指標      類型      說明
+         198.51.100.23   IP      測試用中繼站
+<span class="ok">申請 token 1 次</span>
+&gt; process
+   <span class="ok">已搬到「情資已處理」</span>
+&gt; list
+intel-poc@contoso.onmicrosoft.com 收件匣 <span class="ok">0 封</span></pre>
+              <div class="pc-shots wide">
+                <figure><img src="assets/outlook-received.png" alt="Outlook 網頁版收到的測試信" /><figcaption><b>3</b>收件端畫面：寄件者顯示共用信箱的名稱，中文主旨、HTML 表格、中文檔名附件都正常（個人帳號已遮蔽）</figcaption></figure>
+              </div>
+            </div>
+          </div>
+
+          <!-- 步驟 6 -->
+          <div class="pc-stage">
+            <div class="when">步驟 6</div>
+            <div class="body ok">
+              <h3>反向測試：確認碰不到其他信箱</h3>
+              <ul class="pts">
+                <li>複製一份設定檔，只把信箱改成別的（這份用管理員信箱），其他不動；測完就刪掉這份暫時設定檔</li>
+                <li>讀與寫都應該回 403。這一步是「權限真的只限一個信箱」的證據，跟主管或廠商說明時最有說服力</li>
+              </ul>
+<pre class="pc-term">&gt; list（admin@contoso.onmicrosoft.com 的收件匣）
+<span class="bad">失敗：HTTP 403 ErrorAccessDenied：Access is denied.</span>
+&gt; send（以 admin@contoso.onmicrosoft.com 寄出）
+<span class="bad">失敗：HTTP 403 ErrorAccessDenied：Access is denied.</span></pre>
+            </div>
+          </div>
+
+          <!-- 步驟 7 -->
+          <div class="pc-stage">
+            <div class="when">選用</div>
+            <div class="body">
+              <h3>讓管理員在 Outlook 網頁版看共用信箱</h3>
+              <ul class="pts">
+                <li>共用信箱不能直接登入；在 Exchange 系統管理中心 → Mailboxes → 點共用信箱 → Delegation → Read and manage (Full Access) → Edit → Add members → 選管理員 → Save → Confirm</li>
+                <li>開啟網址 <code>https://outlook.office.com/mail/intel-poc@contoso.onmicrosoft.com/</code>，或在自己信箱左側「新增共用資料夾或信箱」</li>
+                <li>Microsoft 說 5 分鐘內生效，<b>新租用戶實際上隔天才打得開</b>；剛設定完會看到 AccessDenied 錯誤頁，不是設定錯</li>
+                <li>系統管理中心第一次開會跳新手導覽，遮罩可能擋住點擊，重新整理頁面即可</li>
+              </ul>
+              <div class="pc-shots">
+                <figure><img src="assets/eac-mailbox-panel.jpg" alt="共用信箱設定面板" /><figcaption><b>4</b>點共用信箱開啟設定面板</figcaption></figure>
+                <figure><img src="assets/eac-delegation.jpg" alt="Delegation 分頁" /><figcaption><b>5</b>Delegation 分頁：Full Access 目前 0 人</figcaption></figure>
+                <figure><img src="assets/eac-add-member.jpg" alt="加入成員" /><figcaption><b>6</b>勾選管理員後按 Save</figcaption></figure>
+                <figure><img src="assets/eac-saved.jpg" alt="權限已加入" /><figcaption><b>7</b>權限已加入，畫面說 5 分鐘內生效</figcaption></figure>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- 05 常見誤解 -->
+      <section id="myth">
+        <div class="sec-head">
+          <span class="idx">05</span>
+          <h2>常見誤解</h2>
+          <span class="count">6 個</span>
+        </div>
+        <div class="pc-indent pc-myth-grid">
+          <div class="item"><div class="wrong">串公司內部的 AD，就能寄信讀信</div><div class="right">內部 AD 只管使用者登入。Exchange Online 在雲端，程式要向雲端的 Entra ID 取得授權，內部 AD 給不了。</div></div>
+          <div class="item"><div class="wrong">用帳號密碼走 IMAP 就好</div><div class="right">Exchange Online 已永久停用 IMAP／POP 帳密登入，無法重新開啟。IMAP 也得用 OAuth。</div></div>
+          <div class="item"><div class="wrong">改用 IMAP 可以省掉應用程式註冊</div><div class="right">不行。IMAP 一樣要應用程式註冊與信箱授權，而且要多開 993 port、寄信還得另外處理（見第 07 段）。</div></div>
+          <div class="item"><div class="wrong">token 裡沒有權限，程式就不能用</div><div class="right">用 Exchange 角色指派時，token 的 roles 本來就是空的，權限是 Exchange 收到請求時才查。要實際呼叫才知道。</div></div>
+          <div class="item"><div class="wrong">直接在 Entra 勾 Mail.Send、Mail.ReadWrite 最省事</div><div class="right">那是整個租用戶所有信箱的權限，一旦用戶端密碼外流，所有信箱都曝險。用 Exchange 角色指派限定到專用信箱。</div></div>
+          <div class="item"><div class="wrong">可以不連外網</div><div class="right">信箱在 Microsoft 雲端，一定要連外；範圍只限 Microsoft 的網域，而且只需要主機主動連出。</div></div>
+        </div>
+      </section>
+
+      <!-- 06 邊界 -->
+      <section id="limits">
+        <div class="sec-head">
+          <span class="idx">06</span>
+          <h2>邊界：什麼時候不適用、什麼時候會壞</h2>
+        </div>
+        <p class="sec-intro">照著做之前先看這段，避免把這份 PoC 的結論套到它沒驗證過的地方。</p>
+        <div class="pc-indent pc-todo">
+          <div class="card-soft"><h4><span class="badge badge-red">會壞</span>用戶端密碼到期</h4><p>最長 24 個月（建議 12 個月內）。到期後拿不到 token，寄信與讀信同時停擺（AADSTS7000222）。可同時掛兩組，到期前換新的再刪舊的；失敗通知不能也走 Graph。</p></div>
+          <div class="card-soft"><h4><span class="badge badge-red">會壞</span>大附件</h4><p>sendMail 單次請求約 4MB 上限（base64 後會變大），這份 PoC 超過 3MB 直接拒絕；更大的要改用上傳工作階段（upload session）。</p></div>
+          <div class="card-soft"><h4><span class="badge badge-yellow">要注意</span>收件者必須是 email 地址</h4><p>Graph 不認 Notes 階層名稱（<code>CN=xxx/O=xxx</code>）。舊系統若寄給 Notes 名稱或群組，要先轉成 internet address，群組要改用 Exchange 通訊群組。</p></div>
+          <div class="card-soft"><h4><span class="badge badge-yellow">要注意</span>權限生效有延遲</h4><p>角色指派 30 分鐘到 2 小時；剛建立的租用戶，角色指派與共用信箱存取都要等到隔天。排測試時程要預留。</p></div>
+          <div class="card-soft"><h4><span class="badge badge-yellow">要注意</span>proxy 與 SSL 解密</h4><p>主機若經 proxy 且做 SSL 解密檢查，Java 要另外信任 proxy 的根憑證；條件式存取若限制來源 IP，應用程式登入也會被擋。</p></div>
+          <div class="card-soft"><h4><span class="badge badge-oat">未驗證</span>Domino 11 實機</h4><p>程式是 Java 8 位元碼，用 Domino 12 的 JVM（OpenJ9）測過 TLS 連線，但還沒放進 Domino 11 的 agent 實跑；MIME 轉 Notes 文件的部分只寫好、未實測。</p></div>
+          <div class="card-soft"><h4><span class="badge badge-oat">未驗證</span>憑證登入</h4><p>這份用用戶端密碼。改用憑證要在 token 請求加上簽章（client assertion），Java 8 內建可做，但還沒寫。</p></div>
+          <div class="card-soft"><h4><span class="badge badge-oat">環境</span>Windows PowerShell 5.1</h4><p>Microsoft.Graph 模組登入會出 EventSourceException、<code>Connect-ExchangeOnline</code> 沒有 <code>-Device</code>。這份都改用 REST 代碼登入繞過；能用 PowerShell 7 會單純很多。</p></div>
+        </div>
+      </section>
+
+      <!-- 07 深入 -->
+      <section id="deep">
+        <div class="sec-head">
+          <span class="idx">07</span>
+          <h2>想更深入</h2>
+        </div>
+        <p class="sec-intro">踩坑清單、密碼與憑證、IMAP 路線、程式結構與指令速查，需要時再展開。</p>
+        <div class="pc-indent">
+          <details class="reveal">
+            <summary>踩坑清單：8 個問題的原因與解法（含 Windows Defender 擋寫入、按錯「不是我」等）</summary>
+            <div class="pc-tablewrap">
+              <table class="pc-issues">
+                <colgroup><col style="width: 24%" /><col style="width: 38%" /><col style="width: 38%" /></colgroup>
+                <thead><tr><th>問題</th><th>原因</th><th>解法</th></tr></thead>
+                <tbody>
+                  <tr><td><span class="pc-tag code">程式</span>Graph 讀取請求回 406</td><td>HttpURLConnection 預設 Accept 是 <code>text/html, image/gif, image/jpeg, *; q=.2, */*; q=.2</code>，單獨的 <code>*</code> 不合法</td><td>明確設定 Accept：一般 <code>application/json</code>，取 <code>$value</code> 用 <code>*/*</code></td></tr>
+                  <tr><td><span class="pc-tag code">程式</span>401 時讀不到錯誤說明</td><td>串流模式（setFixedLengthStreamingMode）下遇到 401，JDK 會丟掉回應內容</td><td>不用串流模式，單次請求本來就在 4MB 內</td></tr>
+                  <tr><td><span class="pc-tag ms">微軟</span>Exchange 角色指派被拒</td><td>新租用戶剛啟用組織自訂，委派權限還沒同步</td><td>等，隔天重跑；腳本做成可重複執行，已建好的項目會略過</td></tr>
+                  <tr><td><span class="pc-tag ms">微軟</span>Connect-MgGraph 出 EventSourceException</td><td>Microsoft.Graph 模組在 Windows PowerShell 5.1 的問題</td><td>不用這個模組，改 <code>Invoke-RestMethod</code> 直接呼叫 REST</td></tr>
+                  <tr><td><span class="pc-tag ms">微軟</span>Connect-ExchangeOnline 沒有 -Device</td><td>5.1 版的限制</td><td>自己用代碼登入拿 token，再 <code>-AccessToken -UserPrincipalName</code></td></tr>
+                  <tr><td><span class="pc-tag env">環境</span>登入視窗找不到</td><td>內嵌終端機裡，Windows 帳戶登入視窗（WAM）被藏到後面</td><td>改成代碼登入</td></tr>
+                  <tr><td><span class="pc-tag env">環境</span>Windows Defender 擋寫入「文件」</td><td>「文件」在 OneDrive 且受「受控資料夾存取權」保護，PowerShell 想寫 <code>文件\WindowsPowerShell</code> 被擋；舊版 PowerShellGet 因此裝不了模組</td><td>不需要允許：用 <code>Save-Module</code> 把模組存到專案資料夾，只在執行腳本時加進 <code>PSModulePath</code></td></tr>
+                  <tr><td><span class="pc-tag env">環境</span>登入時按到「這不是我」</td><td>該次代碼登入被記為拒絕（authorization_declined）</td><td>重新發出登入請求，不影響帳號安全</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="pc-shots" style="margin-top: calc(12px * var(--dens, 1))">
+              <figure><img src="assets/defender-toast.png" alt="Defender 通知" /><figcaption><b>8</b>Defender「未經授權的變更已遭封鎖」通知</figcaption></figure>
+              <figure><img src="assets/defender-detail.png" alt="Defender 詳細資料" /><figcaption><b>9</b>被擋的是寫入「文件\WindowsPowerShell」</figcaption></figure>
+            </div>
+          </details>
+
+          <details class="reveal">
+            <summary>用戶端密碼與憑證怎麼選、怎麼不停機更換</summary>
+            <div class="pc-tablewrap">
+              <table class="pc-issues">
+                <colgroup><col style="width: 16%" /><col style="width: 42%" /><col style="width: 42%" /></colgroup>
+                <thead><tr><th></th><th>用戶端密碼</th><th>憑證</th></tr></thead>
+                <tbody>
+                  <tr><td>是什麼</td><td>Entra 產生的一串密碼字串</td><td>數位憑證，Entra 上只放公開金鑰</td></tr>
+                  <tr><td>放在哪</td><td>主機上的設定檔</td><td>私密金鑰留在主機，不離開主機</td></tr>
+                  <tr><td>有效期限</td><td>最長 24 個月，建議 12 個月內</td><td>依憑證本身，常見 1～3 年</td></tr>
+                  <tr><td>安全性</td><td>普通，字串外流就能冒用</td><td>較高，Microsoft 推薦</td></tr>
+                  <tr><td>交付</td><td>要把密碼交給開發方，需約定安全的交付方式</td><td>開發方自己產生，只把公開金鑰交出去上傳</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="pc-chain">
+              <div class="step"><span class="who">雙方</span><b>到期前一個月</b>開始更換</div>
+              <div class="step"><span class="who">管理者</span><b>產生新的一組</b>舊的照常能用</div>
+              <div class="step"><span class="who">開發方</span><b>更新設定並確認</b>實測寄信讀信</div>
+              <div class="step"><span class="who">管理者</span><b>刪除舊的</b>確認新的可用後才刪</div>
+            </div>
+          </details>
+
+          <details class="reveal">
+            <summary>如果一定要用 IMAP：要多做的事（5 項對照）</summary>
+            <div class="pc-tablewrap">
+              <table class="pc-issues">
+                <colgroup><col style="width: 16%" /><col style="width: 34%" /><col style="width: 50%" /></colgroup>
+                <thead><tr><th>項目</th><th>Graph（這份的做法）</th><th>IMAP</th></tr></thead>
+                <tbody>
+                  <tr><td>應用程式註冊</td><td>要</td><td>一樣要</td></tr>
+                  <tr><td>權限</td><td>Exchange 角色指派，只限專用信箱</td><td>Entra 加 <code>IMAP.AccessAsApp</code> 並由系統管理員同意，再 <code>New-ServicePrincipal</code>＋<code>Add-MailboxPermission</code></td></tr>
+                  <tr><td>信箱設定</td><td>不用另外開</td><td>確認信箱有開 IMAP（<code>Get-CASMailbox</code> 的 ImapEnabled）</td></tr>
+                  <tr><td>防火牆</td><td>443</td><td>443（取 token）＋ 993（<code>outlook.office365.com</code>）</td></tr>
+                  <tr><td>寄信</td><td>同一個應用程式</td><td>另外處理：SMTP＋OAuth（<code>SMTP.SendAsApp</code>），或 Exchange 連接器依來源 IP 轉送</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <p style="font-size: calc(13.5px * var(--fs, 1)); color: var(--g700)">JavaMail 用 IMAP＋OAuth：需要 1.5.5 以上，設定 <code>mail.imap.auth.mechanisms=XOAUTH2</code>，密碼位置改傳 token（scope 為 <code>https://outlook.office365.com/.default</code>）。</p>
+          </details>
+
+          <details class="reveal">
+            <summary>程式結構：每個類別負責什麼</summary>
+            <div class="pc-tablewrap">
+              <table class="pc-issues">
+                <colgroup><col style="width: 24%" /><col style="width: 52%" /><col style="width: 24%" /></colgroup>
+                <thead><tr><th>類別</th><th>負責</th><th>放在 Domino 的哪裡</th></tr></thead>
+                <tbody>
+                  <tr><td>GraphConfig</td><td>讀 properties 設定檔（UTF-8）：租用戶、應用程式、密碼、信箱、資料夾名稱、proxy、逾時</td><td>Java script library</td></tr>
+                  <tr><td>MiniJson</td><td>百來行的 JSON 解析與輸出，免掛 jar</td><td>Java script library</td></tr>
+                  <tr><td>GraphMailClient</td><td>token 快取、寄信、列信（翻頁）、取 MIME、找／建資料夾、搬移；429／503 重試、401 重拿 token</td><td>Java script library</td></tr>
+                  <tr><td>MailText</td><td>MIME 轉純文字、附件檔名解碼；有 jsoup 就用 jsoup 轉 HTML</td><td>Java script library</td></tr>
+                  <tr><td>GraphNotes</td><td>把 MIME 逐層重建成 Notes 文件的 MIME Body，另存純文字欄位（未實測）</td><td>Java script library</td></tr>
+                  <tr><td>GraphSendAgent／GraphReadAgent</td><td>寄信測試、讀信轉 Notes 文件並搬移</td><td>Java agent（執行安全層級 2）</td></tr>
+                  <tr><td>GraphPocCli</td><td>命令列工具：token、send、list、read、process，不需要 Notes</td><td>本機或伺服器命令列</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <p style="font-size: calc(13.5px * var(--fs, 1)); color: var(--g700)">Domino agent 需要「執行安全層級 2（允許受限制的作業）」才能連網路與讀設定檔，簽署者要在伺服器文件的「Sign or run restricted LotusScript/Java agents」裡。</p>
+          </details>
+
+          <details class="reveal">
+            <summary>命令列工具與常用指令速查</summary>
+<pre class="pc-term">java -jar graph-poc.jar graph-poc.properties token              <span class="dim"># 取 token，顯示到期時間與 token 內的權限</span>
+java -jar graph-poc.jar graph-poc.properties send [收件者]      <span class="dim"># 寄測試信（中文主旨、HTML 表格、中文檔名附件）</span>
+java -jar graph-poc.jar graph-poc.properties list               <span class="dim"># 列收件匣（由舊到新）</span>
+java -jar graph-poc.jar graph-poc.properties read  .\out        <span class="dim"># 讀信解析、原始信存成 .eml，不搬移</span>
+java -jar graph-poc.jar graph-poc.properties process .\out      <span class="dim"># 讀信解析後搬到「已處理」資料夾</span>
+
+Get-ManagementRoleAssignment -Identity IntelPoc-Mail.Send       <span class="dim"># 查某個角色指派（依建立時取的名稱）</span>
+Test-ServicePrincipalAuthorization -Identity &lt;AppId&gt; -Resource &lt;信箱&gt;   <span class="dim"># 查某信箱是否在範圍內</span></pre>
+            <div class="pc-termlabel">設定檔範例（graph-poc.properties，UTF-8，含密碼，不要放進版本控制）</div>
+<pre class="pc-term">tenantId=00000000-0000-0000-0000-000000000000
+clientId=00000000-0000-0000-0000-000000000000
+clientSecret=（只寫在主機上，限制只有服務帳號能讀）
+mailbox=intel-poc@contoso.onmicrosoft.com
+processedFolder=情資已處理
+unreadOnly=false
+maxMessages=20
+#proxyHost=
+#proxyPort=8080</pre>
+          </details>
+
+          <details class="reveal">
+            <summary>若要導入正式環境：請 Exchange 管理者做的設定與交付的值</summary>
+            <div class="pc-tablewrap">
+              <table class="pc-issues">
+                <colgroup><col style="width: 6%" /><col style="width: 30%" /><col style="width: 64%" /></colgroup>
+                <thead><tr><th>#</th><th>項目</th><th>說明</th></tr></thead>
+                <tbody>
+                  <tr><td>1</td><td>應用程式註冊</td><td>單一租用戶；不要加 Graph 的 Mail.* 應用程式權限</td></tr>
+                  <tr><td>2</td><td>用戶端密碼或憑證</td><td>講好有效期限與到期前由誰更新；密碼不要用 email 明文傳</td></tr>
+                  <tr><td>3</td><td>專用信箱</td><td>建議共用信箱</td></tr>
+                  <tr><td>4</td><td>Exchange 服務主體、管理範圍、角色指派</td><td>同步驟 3；指派要用 Organization Management 成員的帳號，指派後 30 分鐘到 2 小時生效</td></tr>
+                  <tr><td>5</td><td>防火牆與 proxy</td><td>主機對外 443：<code>login.microsoftonline.com</code>、<code>graph.microsoft.com</code></td></tr>
+                  <tr><td>6</td><td>交付的值</td><td>租用戶識別碼、應用程式識別碼、密碼（或改用憑證則不用傳）、密碼到期日、專用信箱地址、系統通知的寄件者地址</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </details>
+        </div>
+      </section>
+
+      <footer class="foot">
+        <div>
+          <span class="k">— Exchange Online × Graph × Java 8 實作紀錄</span><br />
+          <span style="font-size: calc(11px * var(--fs, 1)); font-family: var(--mono); color: var(--g500)">實測日期：2026-11 · 範例值皆已替換（contoso）</span>
+        </div>
+        <div><a href="#top">回頂部</a></div>
+      </footer>
+    </div>
+
+    <div class="pc-lightbox" id="pc-lightbox" role="dialog" aria-label="放大截圖"><img id="pc-lightbox-img" alt="" /></div>
+
+    <script>
+      // 點截圖放大；頁面沒有截圖或放大層時直接略過，不影響後面的腳本
+      (function () {
+        const box = document.getElementById("pc-lightbox");
+        const big = document.getElementById("pc-lightbox-img");
+        if (!box || !big) return;
+        document.querySelectorAll(".pc-shots img").forEach(function (img) {
+          img.addEventListener("click", function () {
+            big.src = img.src;
+            big.alt = img.alt;
+            box.classList.add("is-open");
+          });
+        });
+        box.addEventListener("click", function () {
+          box.classList.remove("is-open");
+        });
+        document.addEventListener("keydown", function (e) {
+          if (e.key === "Escape") box.classList.remove("is-open");
+        });
+      })();
+    </script>
+    <script>
+      // 如有互動，加在這裡。
+      // 互動 patterns 見 references/interaction-patterns.md：
+      // - Local storage 自動保存
+      // - Sidebar nav 高亮
+      // - Multi-format export（含 preview + 複製 modal）
+      // - 鍵盤快捷鍵
+    </script>
+
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <!-- 全頁評論系統 — 預設內建、可手動移除                       -->
+    <!-- 完整 snippet 見 references/interaction-patterns.md       -->
+    <!-- § 全頁評論系統（page-wide commenting，預設內建）         -->
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <style>
+      .vt-comment-trigger {
+        position: fixed;
+        z-index: 9998;
+        background: var(--paper);
+        border: 1.5px solid var(--clay);
+        border-radius: 999px;
+        padding: calc(6px * var(--dens, 1)) calc(12px * var(--dens, 1));
+        font-size: calc(12px * var(--fs, 1));
+        color: var(--clay);
+        font-family: var(--mono);
+        cursor: pointer;
+        box-shadow: 0 4px 12px rgba(20, 20, 19, 0.12);
+        display: none;
+        align-items: center;
+        gap: calc(6px * var(--dens, 1));
+        transition: all 0.15s;
+      }
+      .vt-comment-trigger:hover {
+        background: var(--clay);
+        color: var(--paper);
+      }
+      .vt-comment-popup {
+        position: fixed;
+        z-index: 9999;
+        background: var(--paper);
+        border: 1.5px solid var(--g300);
+        border-radius: 12px;
+        box-shadow: 0 12px 32px rgba(20, 20, 19, 0.15);
+        padding: calc(14px * var(--dens, 1)) calc(16px * var(--dens, 1));
+        width: 340px;
+        display: none;
+      }
+      .vt-comment-popup .quote {
+        background: var(--g100);
+        border-left: 3px solid var(--clay);
+        padding: calc(8px * var(--dens, 1)) calc(10px * var(--dens, 1));
+        font-size: calc(12.5px * var(--fs, 1));
+        color: var(--g700);
+        line-height: 1.45;
+        margin-bottom: calc(10px * var(--dens, 1));
+        max-height: 80px;
+        overflow-y: auto;
+      }
+      .vt-comment-popup textarea {
+        width: 100%;
+        border: 1.5px solid var(--g300);
+        border-radius: 8px;
+        padding: calc(8px * var(--dens, 1)) calc(10px * var(--dens, 1));
+        font-size: calc(13px * var(--fs, 1));
+        font-family: var(--sans);
+        resize: vertical;
+        min-height: 60px;
+        color: var(--slate);
+        box-sizing: border-box;
+      }
+      .vt-comment-popup textarea:focus {
+        outline: none;
+        border-color: var(--clay);
+      }
+      .vt-comment-popup .actions {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-top: calc(10px * var(--dens, 1));
+        font-size: calc(11.5px * var(--fs, 1));
+      }
+      .vt-comment-popup .hint {
+        color: var(--g500);
+        font-family: var(--mono);
+      }
+      .vt-comment-popup button.send {
+        background: var(--clay);
+        color: var(--paper);
+        border: none;
+        border-radius: 8px;
+        padding: calc(6px * var(--dens, 1)) calc(14px * var(--dens, 1));
+        font-size: calc(12.5px * var(--fs, 1));
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .vt-comment-popup button.send:hover {
+        background: var(--clay-d);
+      }
+      .vt-comment-popup button.cancel {
+        background: transparent;
+        border: 1px solid var(--g300);
+        color: var(--g500);
+        border-radius: 8px;
+        padding: calc(6px * var(--dens, 1)) calc(12px * var(--dens, 1));
+        font-size: calc(12.5px * var(--fs, 1));
+        cursor: pointer;
+        margin-right: calc(8px * var(--dens, 1));
+      }
+      mark.vt-comment-mark {
+        background: var(--oat);
+        padding: 0 calc(2px * var(--dens, 1));
+        border-radius: 2px;
+        cursor: pointer;
+      }
+      mark.vt-comment-mark:hover {
+        background: #d5c4a8;
+      }
+      .vt-comment-pill {
+        position: fixed;
+        right: 16px;
+        bottom: 16px;
+        z-index: 9990;
+        background: var(--paper);
+        border: 1.5px solid var(--clay);
+        border-radius: 999px;
+        padding: calc(8px * var(--dens, 1)) calc(14px * var(--dens, 1));
+        font-family: var(--mono);
+        font-size: calc(12px * var(--fs, 1));
+        color: var(--clay);
+        cursor: pointer;
+        box-shadow: 0 4px 12px rgba(20, 20, 19, 0.1);
+        display: none;
+        align-items: center;
+        gap: calc(6px * var(--dens, 1));
+        transition: all 0.15s;
+      }
+      .vt-comment-pill.is-active {
+        display: inline-flex;
+      }
+      .vt-comment-pill:hover {
+        background: var(--clay);
+        color: var(--paper);
+      }
+      .vt-comment-pill strong {
+        font-weight: 600;
+      }
+      .vt-comment-list {
+        position: fixed;
+        right: 16px;
+        bottom: 60px;
+        width: 360px;
+        max-height: 60vh;
+        z-index: 9991;
+        background: var(--paper);
+        border: 1.5px solid var(--g300);
+        border-radius: 14px;
+        box-shadow: 0 12px 32px rgba(20, 20, 19, 0.15);
+        display: none;
+        flex-direction: column;
+      }
+      .vt-comment-list.is-open {
+        display: flex;
+      }
+      .vt-comment-list-header {
+        background: var(--paper);
+        border-bottom: 1.5px solid var(--g200);
+        padding: calc(12px * var(--dens, 1)) calc(16px * var(--dens, 1));
+        font-family: var(--mono);
+        font-size: calc(11px * var(--fs, 1));
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--g500);
+        font-weight: 600;
+        border-radius: 14px 14px 0 0;
+      }
+      .vt-comment-list-items {
+        overflow-y: auto;
+        flex: 1;
+      }
+      .vt-comment-item {
+        padding: calc(12px * var(--dens, 1)) calc(16px * var(--dens, 1));
+        border-bottom: 1px solid var(--g200);
+      }
+      .vt-comment-item:last-child {
+        border-bottom: none;
+      }
+      .vt-comment-item .item-quote {
+        font-size: calc(11.5px * var(--fs, 1));
+        color: var(--g500);
+        font-style: italic;
+        border-left: 2px solid var(--oat);
+        padding-left: calc(8px * var(--dens, 1));
+        line-height: 1.4;
+        margin-bottom: calc(6px * var(--dens, 1));
+      }
+      .vt-comment-item .item-body {
+        font-size: calc(13px * var(--fs, 1));
+        color: var(--slate);
+        line-height: 1.5;
+      }
+      .vt-comment-item .item-del {
+        font-size: calc(11px * var(--fs, 1));
+        color: var(--g500);
+        background: none;
+        border: none;
+        cursor: pointer;
+        margin-top: calc(4px * var(--dens, 1));
+        padding: 0;
+        font-family: inherit;
+      }
+      .vt-comment-item .item-del:hover {
+        color: var(--red);
+      }
+      .vt-comment-list-footer {
+        border-top: 1.5px solid var(--g200);
+        padding: calc(10px * var(--dens, 1)) calc(16px * var(--dens, 1));
+        display: flex;
+        justify-content: space-between;
+        gap: calc(8px * var(--dens, 1));
+        border-radius: 0 0 14px 14px;
+        background: var(--g100);
+      }
+      .vt-comment-list-footer button {
+        background: transparent;
+        border: 1.5px solid var(--g300);
+        border-radius: 8px;
+        padding: calc(6px * var(--dens, 1)) calc(12px * var(--dens, 1));
+        font-size: calc(12px * var(--fs, 1));
+        color: var(--g700);
+        cursor: pointer;
+        font-family: inherit;
+      }
+      .vt-comment-list-footer button:hover {
+        border-color: var(--slate);
+        color: var(--slate);
+      }
+      .vt-comment-list-footer button.copy {
+        background: var(--clay);
+        color: var(--paper);
+        border-color: var(--clay);
+      }
+      .vt-comment-list-footer button.copy:hover {
+        background: var(--clay-d);
+      }
+      body.vt-has-existing-export .vt-comment-list-footer button.copy {
+        display: none;
+      }
+    </style>
+    <button class="vt-comment-trigger" id="vt-comment-trigger">💬 評論</button>
+    <div class="vt-comment-popup" id="vt-comment-popup">
+      <div class="quote" id="vt-popup-quote"></div>
+      <textarea
+        id="vt-popup-textarea"
+        placeholder="對這段文字的評論 / 疑問 / 補充..."
+      ></textarea>
+      <div class="actions">
+        <span class="hint">⌘ + Enter 送出 · Esc 取消</span>
+        <div>
+          <button class="cancel" id="vt-popup-cancel">取消</button
+          ><button class="send" id="vt-popup-send">送出</button>
+        </div>
+      </div>
+    </div>
+    <button class="vt-comment-pill" id="vt-comment-pill">
+      💬 <strong id="vt-count">0</strong>
+    </button>
+    <div class="vt-comment-list" id="vt-comment-list">
+      <div class="vt-comment-list-header">— 我的評論</div>
+      <div class="vt-comment-list-items" id="vt-comment-list-items"></div>
+      <div class="vt-comment-list-footer">
+        <button id="vt-clear-all">全部清除</button>
+        <button class="copy" id="vt-copy-fallback">📋 複製評論</button>
+      </div>
+    </div>
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <!-- 共用複製工具 — file:// 下瀏覽器停用 navigator.clipboard，   -->
+    <!-- 一定會落到 execCommand 備援；備援也可能失敗，必須誠實回報   -->
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <script>
+      // 三段式：clipboard API → execCommand 備援 → 都失敗回 false（不假報成功）
+      window.vtCopyText = async function (text) {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          try {
+            await navigator.clipboard.writeText(text);
+            return true;
+          } catch (err) {
+            // 落到 execCommand 備援
+          }
+        }
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        ta.setAttribute("readonly", "");
+        ta.style.position = "fixed";
+        ta.style.top = "-9999px";
+        ta.style.left = "-9999px";
+        document.body.appendChild(ta);
+        try {
+          ta.select();
+          ta.setSelectionRange(0, ta.value.length);
+          return document.execCommand("copy") === true;
+        } catch (err) {
+          return false;
+        } finally {
+          ta.remove();
+        }
+      };
+
+      // 複製失敗時的出路：把文字放進可選取區域並全選，使用者按一次 Cmd+C 即可
+      // target 有給就用頁面既有的預覽區（wrap 為它的外層、會自動展開）；
+      // 沒有預覽區就建一個臨時可選取區（雙擊可關閉）。
+      window.vtSelectForManualCopy = function (text, target, wrap) {
+        let node = target;
+        if (node) {
+          node.textContent = text;
+          if (wrap) wrap.classList.remove("hidden");
+        } else {
+          node = document.getElementById("vt-manual-copy-box");
+          if (!node) {
+            node = document.createElement("pre");
+            node.id = "vt-manual-copy-box";
+            node.title = "雙擊關閉";
+            node.style.cssText =
+              "position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:10000;" +
+              "max-width:min(720px,92vw);max-height:40vh;overflow:auto;white-space:pre-wrap;" +
+              "background:#fff;color:#111;border:1.5px solid #999;border-radius:10px;" +
+              "padding:14px 16px;font-size:12.5px;line-height:1.6;" +
+              "box-shadow:0 12px 40px rgba(0,0,0,.28)";
+            node.addEventListener("dblclick", function () {
+              node.remove();
+            });
+            document.body.appendChild(node);
+          }
+          node.textContent = text;
+        }
+        node.scrollIntoView({ block: "nearest" });
+        const sel = window.getSelection();
+        if (sel) {
+          const range = document.createRange();
+          range.selectNodeContents(node);
+          sel.removeAllRanges();
+          sel.addRange(range);
+        }
+        return node;
+      };
+    </script>
+
+    <script>
+      (function () {
+        const S = "vt-comments-" + location.pathname,
+          L = 80;
+        let c = JSON.parse(localStorage.getItem(S) || "[]"),
+          sel = null;
+        const $ = (i) => document.getElementById(i),
+          tr = $("vt-comment-trigger"),
+          p = $("vt-comment-popup"),
+          pq = $("vt-popup-quote"),
+          pt = $("vt-popup-textarea"),
+          pi = $("vt-comment-pill"),
+          ce = $("vt-count"),
+          le = $("vt-comment-list"),
+          li = $("vt-comment-list-items");
+        window.vtCollectComments = function () {
+          if (!c.length) return "";
+          return (
+            "\n\n---\n\n" +
+            c
+              .map((x) => {
+                const q =
+                  x.quote.length > L ? x.quote.slice(0, L) + "…" : x.quote;
+                return `@評論「${q}」\n  → ${x.body}`;
+              })
+              .join("\n\n")
+          );
+        };
+        function hs(e) {
+          if (
+            e.target.closest(
+              ".vt-comment-popup,.vt-comment-trigger,.vt-comment-pill,.vt-comment-list,button,input,select,textarea",
+            )
+          )
+            return;
+          setTimeout(() => {
+            const s = getSelection(),
+              t = s.toString().trim();
+            if (!t || t.length < 2) {
+              tr.style.display = "none";
+              return;
+            }
+            const r = s.getRangeAt(0),
+              b = r.getBoundingClientRect();
+            sel = { text: t, range: r.cloneRange() };
+            tr.style.display = "inline-flex";
+            tr.style.top = Math.max(8, b.top - 38) + "px";
+            tr.style.left = Math.max(8, b.left + b.width / 2 - 40) + "px";
+          }, 10);
+        }
+        document.addEventListener("mouseup", hs);
+        document.addEventListener("touchend", hs);
+        tr.addEventListener("click", op);
+        function op() {
+          if (!sel) return;
+          const q = sel.text.length > L ? sel.text.slice(0, L) + "…" : sel.text;
+          pq.textContent = q;
+          pt.value = "";
+          const t = tr.getBoundingClientRect();
+          let l = t.left;
+          if (l + 340 > innerWidth - 16) l = innerWidth - 356;
+          let to = t.bottom + 6;
+          if (to + 220 > innerHeight) to = t.top - 230;
+          p.style.left = Math.max(8, l) + "px";
+          p.style.top = Math.max(8, to) + "px";
+          tr.style.display = "none";
+          p.style.display = "block";
+          setTimeout(() => pt.focus(), 50);
+        }
+        $("vt-popup-cancel").addEventListener("click", cp);
+        $("vt-popup-send").addEventListener("click", sc);
+        pt.addEventListener("keydown", (e) => {
+          if (e.isComposing || e.keyCode === 229) return;
+          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+            e.preventDefault();
+            e.stopPropagation();
+            sc();
+          }
+          if (e.key === "Escape") cp();
+        });
+        function cp() {
+          p.style.display = "none";
+          sel = null;
+        }
+        function sc() {
+          const b = pt.value.trim();
+          if (!b || !sel) return cp();
+          const id = "c-" + Date.now(),
+            q = sel.text;
+          try {
+            const m = document.createElement("mark");
+            m.className = "vt-comment-mark";
+            m.dataset.commentId = id;
+            sel.range.surroundContents(m);
+          } catch (e) {}
+          c.push({ id, quote: q, body: b, ts: Date.now() });
+          ps();
+          rn();
+          cp();
+          getSelection().removeAllRanges();
+        }
+        function ps() {
+          localStorage.setItem(S, JSON.stringify(c));
+        }
+        function rn() {
+          ce.textContent = c.length;
+          pi.classList.toggle("is-active", c.length > 0);
+          if (!c.length) le.classList.remove("is-open");
+          li.innerHTML = c
+            .map((x) => {
+              const q =
+                x.quote.length > 60 ? x.quote.slice(0, 60) + "…" : x.quote;
+              return `<div class="vt-comment-item" data-id="${x.id}"><div class="item-quote">「${eh(q)}」</div><div class="item-body">${eh(x.body)}</div><button class="item-del" data-del="${x.id}">刪除</button></div>`;
+            })
+            .join("");
+          li.querySelectorAll("[data-del]").forEach((b) =>
+            b.addEventListener("click", () => dc(b.dataset.del)),
+          );
+        }
+        function dc(id) {
+          c = c.filter((x) => x.id !== id);
+          document
+            .querySelectorAll(`mark.vt-comment-mark[data-comment-id="${id}"]`)
+            .forEach((m) => {
+              const pr = m.parentNode;
+              while (m.firstChild) pr.insertBefore(m.firstChild, m);
+              pr.removeChild(m);
+              pr.normalize();
+            });
+          ps();
+          rn();
+        }
+        function eh(s) {
+          return String(s).replace(
+            /[&<>"']/g,
+            (ch) =>
+              ({
+                "&": "&amp;",
+                "<": "&lt;",
+                ">": "&gt;",
+                '"': "&quot;",
+                "'": "&#39;",
+              })[ch],
+          );
+        }
+        pi.addEventListener("click", () => le.classList.toggle("is-open"));
+        $("vt-clear-all").addEventListener("click", () => {
+          if (!c.length) return;
+          if (!confirm("確定清除全部 " + c.length + " 條評論？")) return;
+          document.querySelectorAll("mark.vt-comment-mark").forEach((m) => {
+            const pr = m.parentNode;
+            while (m.firstChild) pr.insertBefore(m.firstChild, m);
+            pr.removeChild(m);
+            pr.normalize();
+          });
+          c = [];
+          ps();
+          rn();
+        });
+        $("vt-copy-fallback").addEventListener("click", async (e) => {
+          if (!c.length) return;
+          const t = window.vtCollectComments().replace(/^\n\n---\n\n/, ""),
+            b = e.currentTarget,
+            o = b.textContent;
+          const ok = await window.vtCopyText(t);
+          if (ok) {
+            b.textContent = "✅ 已複製";
+          } else {
+            // 複製不到就不假報成功：把評論放進臨時區域並全選
+            window.vtSelectForManualCopy(t);
+            b.textContent = "已選取 → 請按 Cmd+C";
+          }
+          setTimeout(() => (b.textContent = o), ok ? 2000 : 6000);
+        });
+        setTimeout(() => {
+          if (typeof window.vtBuildDecisionExport === "function")
+            document.body.classList.add("vt-has-existing-export");
+        }, 100);
+        document.addEventListener("click", (e) => {
+          if (
+            p.style.display === "block" &&
+            !e.target.closest(".vt-comment-popup,.vt-comment-trigger")
+          )
+            cp();
+        });
+        rn();
+      })();
+    </script>
+  
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <!-- Session 識別 — 多視窗並行時分辨這份是哪個 session 產的     -->
+    <!-- 產出時把 scripts/session-label.sh 的結果填進下面兩個值      -->
+    <!-- 留空 = 整段停用（範本原檔即此狀態）                        -->
+    <!-- 完整說明見 references/session-identity.md                 -->
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <script>
+      window.VT_SESSION = { label: "m365-graph-mail-poc", id: "guide", project: "m365-graph-mail-poc" };
+    </script>
+    <style>
+      .vt-session-badge {
+        display: flex;
+        align-items: center;
+        gap: calc(9px * var(--dens, 1));
+        padding: calc(5px * var(--dens, 1)) calc(16px * var(--dens, 1));
+        background: var(--vt-session-color, #666);
+        color: #fff;
+        font-family: var(--mono, ui-monospace, monospace);
+        font-size: calc(11.5px * var(--fs, 1));
+        letter-spacing: 0.06em;
+      }
+      .vt-session-badge .dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: #fff;
+        opacity: 0.85;
+        flex-shrink: 0;
+      }
+      .vt-session-badge .lb {
+        font-weight: 700;
+        text-transform: uppercase;
+      }
+      .vt-session-badge .id {
+        margin-left: auto;
+        opacity: 0.75;
+      }
+    </style>
+    <script>
+      (function () {
+        const s = window.VT_SESSION || {};
+        if (!s.label) return;
+        const seed = s.id || s.label;
+        let hue = 7;
+        for (const c of seed) hue = (hue * 31 + c.charCodeAt(0)) % 360;
+        const col = `hsl(${hue} 58% 42%)`;
+        document.title = `${s.label} · ${document.title}`;
+        try {
+          const cv = document.createElement("canvas");
+          cv.width = cv.height = 64;
+          const g = cv.getContext("2d");
+          g.fillStyle = col;
+          if (g.roundRect) {
+            g.beginPath();
+            g.roundRect(2, 2, 60, 60, 14);
+            g.fill();
+          } else {
+            g.fillRect(2, 2, 60, 60);
+          }
+          g.fillStyle = "#fff";
+          g.font = '700 38px ui-sans-serif, system-ui, "PingFang TC"';
+          g.textAlign = "center";
+          g.textBaseline = "middle";
+          const ch = (s.label.match(/[A-Za-z0-9\u4e00-\u9fff]/) || ["?"])[0];
+          g.fillText(ch.toUpperCase(), 32, 36);
+          const link = document.createElement("link");
+          link.rel = "icon";
+          link.href = cv.toDataURL();
+          document.head.appendChild(link);
+        } catch (e) {}
+        const b = document.createElement("div");
+        b.className = "vt-session-badge";
+        b.style.setProperty("--vt-session-color", col);
+        b.innerHTML =
+          '<span class="dot"></span><span class="lb"></span><span class="id"></span>';
+        b.querySelector(".lb").textContent = s.label;
+        b.querySelector(".id").textContent = s.id || "";
+        const host = document.querySelector("header") || document.body;
+        host.insertBefore(b, host.firstChild);
+      })();
+    </script>
+  <!-- vt-tweaks:begin v=c10c74fa98 -->
+<style id="vt-tweaks-css">
+/* 風格設定面板 — 與 tweaks.js 成對，由 scripts/stamp.py 在 verify 時注入頁尾（作者不用複製）。
+   字級與間距的倍率靠兩個變數：--fs（字級）、--dens（間距）。stamp.py 會把頁面裡寫死的
+   px 字級與間距改成 calc(原值 * var(--fs|--dens, 1))，這裡只負責「哪些區塊不吃倍率」。 */
+
+/* 不吃倍率：結構圖、畫面樣張（它們是示意畫面，照比例縮放才對）、頁面介面本身
+   （風格設定面板、評論工具、session 徽章；字放到 200% 時還得能把它調回來）、作者手動鎖定的區塊。
+   ⚠️ 要逐一列出，不能用「class 以 vt- 開頭」：評論工具會在 body 加 vt-has-existing-export，
+   前綴比對會把整頁鎖死；被評論標記的文字（vt-comment-mark）也該跟著內文縮放。 */
+svg,
+.mock,
+[data-tw-lock],
+.vt-tw-root,
+.vt-comment-trigger,
+.vt-comment-popup,
+.vt-comment-pill,
+.vt-comment-list,
+.vt-session-badge {
+  --fs: 1;
+  --dens: 1;
+}
+/* 沒宣告字級的頁面（spec-alignment 範本就是）：零權重，任何頁面規則都蓋得過它 */
+:where(body) {
+  font-size: calc(16px * var(--fs, 1));
+}
+/* Tailwind 文字 class 的覆寫由 stamp.py 視頁面需要產生（只在有 Tailwind、倍率≠1 時生效），不放這裡 */
+
+/* ── 面板本體（按鈕與面板都掛 vt-tw-root → 在上面的排除清單裡，不吃倍率）── */
+/* 沒有底部列可停的頁：浮在左下角（右下角是評論工具） */
+.vt-tw-launch {
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  z-index: 9100;
+  display: flex;
+  align-items: center;
+  gap: calc(5px * var(--dens, 1));
+  font: 600 calc(12px * var(--fs, 1)) var(--sans, system-ui, sans-serif);
+  padding: calc(5px * var(--dens, 1)) calc(10px * var(--dens, 1));
+  border-radius: 999px;
+  border: 1.5px solid var(--slate, #141413);
+  background: var(--slate, #141413);
+  color: #fff;
+  cursor: pointer;
+  box-shadow: 0 6px 18px rgba(20, 20, 19, 0.2);
+}
+.vt-tw-launch svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+/* 停在底部列「預覽摘要」左邊：外觀跟旁邊的次要按鈕一致，各寬度都停（窄螢幕只顯示圖示，見檔尾） */
+.vt-tw-launch.vt-tw-docked {
+  position: static;
+  display: inline-flex; /* 父層是一般區塊時才不會獨佔一行、把列撐高 */
+  font: 500 calc(14px * var(--fs, 1)) var(--sans, system-ui, sans-serif);
+  padding: calc(10px * var(--dens, 1)) calc(16px * var(--dens, 1));
+  border-radius: 10px;
+  border: 1.5px solid var(--g300, #d1cfc5);
+  background: #fff;
+  color: var(--slate, #141413);
+  box-shadow: none;
+}
+.vt-tw-launch.vt-tw-docked:hover {
+  border-color: var(--slate, #141413);
+}
+/* 位置（bottom、left／right、max-height）由 tweaks.js 依按鈕位置算 */
+.vt-tw-pop {
+  position: fixed;
+  width: min(330px, 92vw);
+  overflow: auto;
+  z-index: 9100;
+  background: #fff;
+  color: var(--slate, #141413);
+  border: 1.5px solid var(--g300, #d1cfc5);
+  border-radius: 12px;
+  box-shadow: 0 16px 44px rgba(20, 20, 19, 0.22);
+  padding: calc(14px * var(--dens, 1)) calc(16px * var(--dens, 1)) calc(16px * var(--dens, 1));
+  font: calc(13px * var(--fs, 1))/1.5 var(--sans, system-ui, sans-serif);
+  text-align: left;
+}
+.vt-tw-pop[hidden] {
+  display: none;
+}
+.vt-tw-sec {
+  font: 600 calc(10.5px * var(--fs, 1)) var(--mono, ui-monospace, monospace);
+  color: var(--g500, #87867f);
+  letter-spacing: 0.06em;
+  margin: calc(12px * var(--dens, 1)) 0 calc(6px * var(--dens, 1));
+  padding-top: calc(10px * var(--dens, 1));
+  border-top: 1px solid var(--g200, #e6e3da);
+}
+.vt-tw-sec.vt-tw-first {
+  border-top: 0;
+  padding-top: 0;
+  margin-top: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+/* 中英切換：面板頂端那行的右邊 */
+.vt-tw-lang {
+  font: 600 calc(11px * var(--fs, 1)) var(--sans, system-ui, sans-serif);
+  letter-spacing: 0;
+  padding: calc(2px * var(--dens, 1)) calc(8px * var(--dens, 1));
+  border-radius: 6px;
+  border: 1.5px solid var(--g300, #d1cfc5);
+  background: #fff;
+  color: var(--g700, #3d3d3a);
+  cursor: pointer;
+}
+.vt-tw-lang:hover {
+  border-color: var(--slate, #141413);
+}
+.vt-tw-item {
+  margin: calc(8px * var(--dens, 1)) 0;
+}
+.vt-tw-label {
+  display: flex;
+  justify-content: space-between;
+  gap: calc(8px * var(--dens, 1));
+  font-weight: 600;
+  margin-bottom: calc(4px * var(--dens, 1));
+}
+.vt-tw-val {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-weight: 500;
+  color: var(--clay-d, #b85c3e);
+}
+.vt-tw-item input[type="range"] {
+  width: 100%;
+  accent-color: var(--clay, #d97757);
+}
+.vt-tw-seg {
+  display: flex;
+  border: 1.5px solid var(--g300, #d1cfc5);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.vt-tw-seg button {
+  flex: 1;
+  font: calc(12.5px * var(--fs, 1)) var(--sans, system-ui, sans-serif);
+  padding: calc(5px * var(--dens, 1)) calc(4px * var(--dens, 1));
+  border: 0;
+  border-right: 1px solid var(--g300, #d1cfc5);
+  background: #fff;
+  color: var(--g700, #3d3d3a);
+  cursor: pointer;
+}
+.vt-tw-seg button:last-child {
+  border-right: 0;
+}
+.vt-tw-seg button.vt-tw-on {
+  background: var(--slate, #141413);
+  color: #fff;
+}
+.vt-tw-hint {
+  font-size: calc(11.5px * var(--fs, 1));
+  color: var(--g500, #87867f);
+  line-height: 1.5;
+  margin-top: calc(5px * var(--dens, 1));
+}
+.vt-tw-actions {
+  display: flex;
+  gap: calc(8px * var(--dens, 1));
+  margin-top: calc(14px * var(--dens, 1));
+}
+.vt-tw-actions button {
+  flex: 1;
+  font: calc(12.5px * var(--fs, 1)) var(--sans, system-ui, sans-serif);
+  padding: calc(7px * var(--dens, 1)) calc(8px * var(--dens, 1));
+  border-radius: 8px;
+  border: 1.5px solid var(--g300, #d1cfc5);
+  background: #fff;
+  cursor: pointer;
+}
+.vt-tw-actions button.vt-tw-pri {
+  border-color: var(--clay, #d97757);
+  color: var(--clay-d, #b85c3e);
+  font-weight: 600;
+}
+.vt-tw-actions button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.vt-tw-manual {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: calc(8px * var(--dens, 1));
+  padding: calc(6px * var(--dens, 1)) calc(8px * var(--dens, 1));
+  font: calc(11px * var(--fs, 1))/1.5 var(--mono, ui-monospace, monospace);
+  border: 1.5px solid var(--g300, #d1cfc5);
+  border-radius: 8px;
+  resize: vertical;
+}
+.vt-tw-manual[hidden] {
+  display: none;
+}
+.vt-tw-actions button[aria-pressed="true"] {
+  background: var(--clay-d, #b85c3e);
+  border-color: var(--clay-d, #b85c3e);
+  color: #fff;
+}
+@media (max-width: 760px) {
+  .vt-tw-launch {
+    padding: calc(8px * var(--dens, 1));
+  }
+  .vt-tw-lbl {
+    display: none; /* 手機只留圖示，少蓋一點內容 */
+  }
+}
+/* 範本底部列在 900px 以下擠不下帶字的第三顆鈕：只留圖示、縮內距，高度跟旁邊的按鈕拉齊。
+   約 360px 以下、以及 700px 前後一小段寬度，列仍可能折成兩行（範圍依列上的文字與按鈕字數而定；等於更窄螢幕的版型），接受 */
+@media (max-width: 900px) {
+  .vt-tw-docked .vt-tw-lbl {
+    display: none;
+  }
+  .vt-tw-launch.vt-tw-docked {
+    padding: calc(10px * var(--dens, 1)) calc(11px * var(--dens, 1));
+    align-self: stretch;
+  }
+}
+
+</style>
+<script id="vt-tweaks-js" data-profile-tool="$HOME\.claude\plugins\cache\chenjackle45\html-visualizer\0.2.1\skills\html-visualizer\scripts\profile.py">
+/* 風格設定面板 — 與 tweaks.css 成對，由 scripts/stamp.py 在 verify 時注入頁尾（作者不用複製）。
+ * 按鈕「風格設定」：頁面有範本底部列的「預覽摘要」（#preview-btn）就停在它左邊，各寬度都是（窄螢幕只顯示圖示）；
+ * 沒有底部列就固定在左下角（右下角是評論工具的位置）。面板從按鈕上方打開。
+ * 底部列一律用範本的，按鈕不偵測、不閃避頁面自己做的固定列。
+ * （本檔任何地方都不能出現 script 的結尾標籤字樣，否則內嵌時瀏覽器會在那裡把腳本切斷。）
+ *
+ * 固定層（每頁都有）：字級 90%–200%、密度、內容寬度，寫在 <html> 的 --fs／--dens／--wrap-max。
+ * 內容層（作者選配，預設 0 項）：頁面放一個 type 為 application/json、id 為 vt-tweaks 的 script 區塊，
+ *   內容是 [{id,label,options:[[值,顯示],...],hint}]。
+ * 選了之後在 <html> 設 data-tw-<id>="值"，作者只寫對應的 CSS，不寫 JS。hint 必填（這項會改到頁面上的什麼）。
+ * 調過的值只改畫面、不進複製摘要。讀者按「存成我的預設」才產生「設定檔變更」段落（給 AI 執行的一行
+ * profile.py 指令，使用者不用自己跑）：有拍板摘要的頁經 window.vtCollectComments 接進摘要，沒有的頁直接複製。
+ * 介面有中英兩種，面板頂端可切換（「設定檔變更」段落也跟著換語言）。
+ */
+(function () {
+  var root = document.documentElement;
+  var me = document.currentScript;
+  var tool = (me && me.getAttribute("data-profile-tool")) || "profile.py";
+  // 介面語言：讀者切換過就記在瀏覽器、之後的頁沿用；沒切過跟頁面的 lang 走。
+  // 沙盒 iframe（沒開 allow-same-origin）一碰 localStorage 就丟錯，所以包 try
+  var lang = null;
+  try {
+    lang = localStorage.getItem("vt-tw-lang");
+  } catch (e) {}
+  if (lang !== "zh" && lang !== "en") lang = /^en/i.test(root.lang) ? "en" : "zh";
+  var LANG = {
+    zh: {
+      name: "風格設定",
+      short: "風格設定",
+      title: "風格設定（字級、密度、寬度）",
+      fixed: "固定層 · 每頁都有",
+      content: "內容層 · 這頁專屬",
+      swap: "EN",
+      reset: "全部還原",
+      save: "存成我的預設",
+      added: "已加進複製摘要",
+      copied: "已複製，貼回對話即可",
+      select: "已選取，請按 Cmd+C",
+      need: function (n) {
+        return "調過" + n.slice(0, -1).join("、") + "或" + n[n.length - 1] + "，才能存成你的預設。";
+      },
+      undo: "存檔指令已加進這頁的複製摘要，複製後貼回對話即可；再按一次取消。",
+      toSummary: "按下後，存檔指令會加進這頁的複製摘要；貼回對話，AI 會寫進你的設定檔，之後的頁都用這組。",
+      toCopy: "按下後會複製一段指令；貼回對話，AI 會寫進你的設定檔，之後的頁都用這組。",
+      head: "## 設定檔變更\n給 AI：使用者要把這頁的顯示設定存成預設（",
+      pair: "：",
+      join: "、",
+      tail: "）。請執行下面這行寫入 html-visualizer 設定檔，完成後回報前後差異；使用者不用自己跑。\n",
+    },
+    en: {
+      name: "Style settings",
+      short: "Style",
+      title: "Style settings (text size, density, width)",
+      fixed: "Every page",
+      content: "This page only",
+      swap: "中文",
+      reset: "Reset all",
+      save: "Save as my default",
+      added: "Added to summary",
+      copied: "Copied",
+      select: "Press Cmd+C",
+      need: function (n) {
+        n = n.map(function (x) {
+          return x.toLowerCase();
+        });
+        return "Change the " + n.slice(0, -1).join(", ") + " or " + n[n.length - 1] + " to save it as your default.";
+      },
+      undo: "The save command is in this page's copy summary. Copy the summary and paste it into the chat. Click again to remove it.",
+      toSummary: "Adds a save command to this page's copy summary. Paste it into the chat and the AI writes it to your profile; later pages use these settings.",
+      toCopy: "Copies a save command. Paste it into the chat and the AI writes it to your profile; later pages use these settings.",
+      head: "## Profile changes\nFor the AI: the user wants to save this page's display settings as their default (",
+      pair: ": ",
+      join: ", ",
+      tail: "). Run the line below to write them to the html-visualizer profile, then report the before and after values. The user doesn't need to run it.\n",
+    },
+  };
+  var L = LANG[lang];
+  // 固定層的名稱與選項是 {zh, en}；作者寫的內容層（字串或數字）原樣顯示
+  function txt(x) {
+    return x && typeof x === "object" ? x[lang] : x;
+  }
+  var cs = getComputedStyle(root);
+  function cssNum(name, fallback) {
+    var v = parseFloat(cs.getPropertyValue(name));
+    return isNaN(v) ? fallback : v;
+  }
+  var baseFs = cssNum("--fs", 1);
+  var DENS = [
+    ["0.75", { zh: "緊湊", en: "Compact" }, "compact"],
+    ["1", { zh: "標準", en: "Standard" }, "standard"],
+    ["1.3", { zh: "寬鬆", en: "Relaxed" }, "relaxed"],
+  ];
+  var baseDens = String(cssNum("--dens", 1));
+  if (!DENS.some(function (d) { return d[0] === baseDens; })) baseDens = "1";
+  // 內容寬度只在頁面有用 --wrap-max 時提供（範本在 :root 宣告它）；沒宣告的頁按了也不會動，乾脆不顯示
+  var rawWrap = cs.getPropertyValue("--wrap-max").trim();
+  var baseWrap = parseFloat(rawWrap) || 1760;
+  var wrapOpts = [
+    ["1760px", { zh: "滿版", en: "Full" }, "1760"],
+    ["1080px", { zh: "閱讀寬", en: "Reading" }, "1080"],
+  ];
+  if (baseWrap !== 1760 && baseWrap !== 1080) wrapOpts.unshift([baseWrap + "px", { zh: "預設", en: "Default" }, String(baseWrap)]);
+  var FIXED = [
+    { id: "fs", label: { zh: "字級", en: "Text size" }, kind: "range", min: 0.9, max: 2, step: 0.05, def: String(baseFs), css: "--fs", profile: "tokens.type.scale" },
+    { id: "dens", label: { zh: "密度", en: "Density" }, css: "--dens", def: baseDens, profile: "tokens.layout.density", options: DENS },
+  ];
+  if (rawWrap) {
+    FIXED.push({ id: "width", label: { zh: "內容寬度", en: "Width" }, css: "--wrap-max", def: baseWrap + "px", profile: "tokens.layout.maxWidth", options: wrapOpts });
+  }
+  // html.vt-fs：倍率≠1 時才讓 Tailwind 文字 class 的覆寫生效（stamp.py 產生的規則都掛在它底下）
+  root.classList.toggle("vt-fs", baseFs !== 1);
+  var content = [];
+  // 用 querySelector：沒有內容層的頁面本來就沒有這個元素，不該被 verify 的元素參照檢查報成缺漏
+  var decl = document.querySelector("script#vt-tweaks");
+  if (decl) {
+    try {
+      content = JSON.parse(decl.textContent);
+    } catch (e) {
+      console.error("vt-tweaks 宣告不是合法 JSON", e);
+    }
+  }
+  content = content.filter(function (c) {
+    var ok =
+      c && c.id && c.label && Array.isArray(c.options) && c.options.length >= 2;
+    if (!ok) console.error("vt-tweaks 項目缺 id／label／options", c);
+    else if (!c.hint)
+      console.error(
+        "vt-tweaks 項目缺 hint（要寫這項會改到頁面上的什麼）",
+        c.id,
+      );
+    return ok;
+  });
+  if (content.length > 3) {
+    console.error("vt-tweaks 最多 3 項，多的不顯示");
+    content = content.slice(0, 3);
+  }
+  content.forEach(function (c) {
+    c.attr = "data-tw-" + c.id;
+    c.def = String(c.options[0][0]);
+  });
+  var ALL = FIXED.concat(content);
+  var saved = false; // 按過「存成我的預設」（只在有拍板摘要的頁用得到）
+  var state = {};
+  ALL.forEach(function (t) {
+    state[t.id] = t.def;
+  });
+
+  function label(t, v) {
+    if (t.kind === "range") return Math.round(parseFloat(v) * 100) + "%";
+    for (var i = 0; i < t.options.length; i++)
+      if (String(t.options[i][0]) === v) return txt(t.options[i][1]);
+    return v;
+  }
+  function apply(t) {
+    if (t.css) root.style.setProperty(t.css, state[t.id]);
+    if (t.attr) root.setAttribute(t.attr, state[t.id]);
+    if (t.id === "fs") root.classList.toggle("vt-fs", parseFloat(state.fs) !== 1);
+  }
+  function el(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+  }
+  // 切換語言時要重寫的文字：登記時先畫一次，切換時全部重跑
+  var paint = [];
+  function painted(fn) {
+    paint.push(fn);
+    fn();
+  }
+  // 頁面自己的介面文字（範本底部列的按鈕等）也跟著換：元素寫 data-en="英文"，原本的中文第一次換掉前先存進 data-zh。
+  // <html data-vt-lang> 給頁面腳本讀，組執行期文字（例如「已複製」）時用
+  painted(function () {
+    root.setAttribute("data-vt-lang", lang);
+    document.querySelectorAll("[data-en]").forEach(function (e) {
+      if (!e.hasAttribute("data-zh")) e.setAttribute("data-zh", e.textContent);
+      e.textContent = e.getAttribute(lang === "en" ? "data-en" : "data-zh");
+    });
+  });
+
+  var launch = el("button", "vt-tw-launch vt-tw-root");
+  launch.type = "button";
+  launch.setAttribute("aria-expanded", "false");
+  launch.innerHTML =
+    '<svg viewBox="0 0 24 24" aria-hidden="true"><line x1="21" y1="4" x2="14" y2="4"/><line x1="10" y1="4" x2="3" y2="4"/><line x1="21" y1="12" x2="12" y2="12"/><line x1="8" y1="12" x2="3" y2="12"/><line x1="21" y1="20" x2="16" y2="20"/><line x1="12" y1="20" x2="3" y2="20"/><line x1="14" y1="2" x2="14" y2="6"/><line x1="8" y1="10" x2="8" y2="14"/><line x1="16" y1="18" x2="16" y2="22"/></svg>';
+  var lbl = launch.appendChild(el("span", "vt-tw-lbl"));
+  var pop = el("aside", "vt-tw-pop vt-tw-root");
+  pop.hidden = true;
+  painted(function () {
+    launch.setAttribute("aria-label", L.name);
+    launch.title = L.title;
+    lbl.textContent = L.short;
+    pop.setAttribute("aria-label", L.name);
+  });
+
+  function control(t) {
+    var wrap = el("div", "vt-tw-item");
+    var lab = el("div", "vt-tw-label");
+    var name = lab.appendChild(el("span"));
+    var val = el("span", "vt-tw-val");
+    lab.appendChild(val);
+    wrap.appendChild(lab);
+    function sync() {
+      val.textContent = label(t, state[t.id]);
+    }
+    if (t.kind === "range") {
+      var r = el("input");
+      r.type = "range";
+      r.min = t.min;
+      r.max = t.max;
+      r.step = t.step;
+      r.value = state[t.id];
+      r.addEventListener("input", function () {
+        state[t.id] = r.value;
+        apply(t);
+        sync();
+        refreshSave();
+      });
+      wrap.appendChild(r);
+      t.reset = function () {
+        r.value = t.def;
+      };
+    } else {
+      var seg = el("div", "vt-tw-seg");
+      t.options.forEach(function (o) {
+        var b = el("button");
+        b.type = "button";
+        painted(function () {
+          b.textContent = txt(o[1]);
+        });
+        b.setAttribute("data-v", String(o[0]));
+        b.addEventListener("click", function () {
+          state[t.id] = String(o[0]);
+          apply(t);
+          mark();
+          sync();
+          refreshSave();
+        });
+        seg.appendChild(b);
+      });
+      function mark() {
+        seg.querySelectorAll("button").forEach(function (b) {
+          b.classList.toggle(
+            "vt-tw-on",
+            b.getAttribute("data-v") === state[t.id],
+          );
+        });
+      }
+      mark();
+      t.reset = mark;
+      wrap.appendChild(seg);
+    }
+    if (t.hint) wrap.appendChild(el("div", "vt-tw-hint", t.hint));
+    t.sync = sync;
+    painted(function () {
+      name.textContent = txt(t.label);
+      if (r) r.setAttribute("aria-label", txt(t.label));
+      sync();
+    });
+    return wrap;
+  }
+  var first = pop.appendChild(el("div", "vt-tw-sec vt-tw-first"));
+  var firstText = first.appendChild(el("span"));
+  var langBtn = first.appendChild(el("button", "vt-tw-lang"));
+  langBtn.type = "button";
+  painted(function () {
+    firstText.textContent = L.fixed;
+    langBtn.textContent = L.swap;
+  });
+  FIXED.forEach(function (t) {
+    pop.appendChild(control(t));
+  });
+  if (content.length) {
+    var sec = pop.appendChild(el("div", "vt-tw-sec"));
+    painted(function () {
+      sec.textContent = L.content;
+    });
+    content.forEach(function (t) {
+      pop.appendChild(control(t));
+    });
+  }
+  var actions = el("div", "vt-tw-actions");
+  var resetBtn = el("button");
+  resetBtn.type = "button";
+  painted(function () {
+    resetBtn.textContent = L.reset;
+  });
+  var saveBtn = el("button", "vt-tw-pri");
+  saveBtn.type = "button";
+  actions.appendChild(resetBtn);
+  actions.appendChild(saveBtn);
+  pop.appendChild(actions);
+  var saveHint = el("div", "vt-tw-hint");
+  pop.appendChild(saveHint);
+  // 複製不到時的出路：指令放進這裡並全選，使用者按 Cmd+C（純展示頁沒有頁面自帶的複製函式）
+  var manual = el("textarea", "vt-tw-manual");
+  manual.readOnly = true;
+  manual.rows = 4;
+  manual.hidden = true;
+  pop.appendChild(manual);
+  var flashTimer = null;
+
+  function changedFixed() {
+    return FIXED.filter(function (t) {
+      return state[t.id] !== t.def;
+    });
+  }
+  function profileValue(t, v) {
+    if (t.options) {
+      for (var i = 0; i < t.options.length; i++)
+        if (String(t.options[i][0]) === v) return t.options[i][2];
+    }
+    return String(Math.round(parseFloat(v) * 100) / 100);
+  }
+  function hasSummary() {
+    return typeof window.vtBuildDecisionExport === "function";
+  }
+  function saveText(ch) {
+    return (
+      L.head +
+      ch
+        .map(function (t) {
+          return txt(t.label) + L.pair + label(t, state[t.id]);
+        })
+        .join(L.join) +
+      L.tail +
+      // 雙引號：路徑以 $HOME 開頭，單引號裡不會展開
+      'python3 "' +
+      tool +
+      '" set ' +
+      ch
+        .map(function (t) {
+          return t.profile + "=" + profileValue(t, state[t.id]);
+        })
+        .join(" ")
+    );
+  }
+  function refreshSave() {
+    var n = changedFixed().length;
+    // 只看目前的值：拖滑桿途中經過預設值那一格不該把已存取消
+    var on = saved && n > 0;
+    // 失敗時留下的文字框：設定一變，裡面的指令就過時了
+    if (!manual.hidden && manual.value !== saveText(changedFixed())) manual.hidden = true;
+    saveBtn.disabled = !n;
+    if (hasSummary()) saveBtn.setAttribute("aria-pressed", String(on));
+    saveBtn.textContent = on ? L.added : L.save;
+    saveHint.textContent = !n
+      ? L.need(FIXED.map(function (t) {
+          return txt(t.label);
+        }))
+      : on
+        ? L.undo
+        : hasSummary()
+        ? L.toSummary
+        : L.toCopy;
+  }
+  window.vtCollectTweaks = function () {
+    var ch = changedFixed();
+    return saved && ch.length ? "\n\n" + saveText(ch) : "";
+  };
+  resetBtn.addEventListener("click", function () {
+    saved = false;
+    ALL.forEach(function (t) {
+      state[t.id] = t.def;
+      apply(t);
+      t.reset();
+      t.sync();
+    });
+    refreshSave();
+  });
+  saveBtn.addEventListener("click", async function () {
+    if (hasSummary()) {
+      saved = !saved;
+      refreshSave();
+      return;
+    }
+    // 沒有拍板摘要的頁：按鈕本身就是出口，直接複製
+    var text = saveText(changedFixed());
+    var ok = false;
+    manual.hidden = true;
+    if (window.vtCopyText) ok = await window.vtCopyText(text);
+    // 沒有頁面的複製函式就直接走下面：在點擊當下同步複製，不先 await 別的 API 把使用者手勢耗掉
+    if (!ok) {
+      manual.value = text;
+      manual.hidden = false;
+      manual.select();
+      try {
+        ok = document.execCommand("copy");
+      } catch (e) {}
+      if (ok) manual.hidden = true;
+    }
+    saveBtn.textContent = ok ? L.copied : L.select;
+    clearTimeout(flashTimer); // 連點時舊計時器不能提早蓋掉新回饋
+    flashTimer = setTimeout(refreshSave, ok ? 2000 : 6000);
+  });
+  // 面板開在按鈕上方：按鈕在右半就右緣對齊、左半就左緣對齊；
+  // 按鈕上方不到 200px（視窗矮、底部列展開）就改貼畫面頂端，不讓面板頂端跑出畫面
+  function place() {
+    var r = launch.getBoundingClientRect();
+    var w = Math.min(330, window.innerWidth * 0.92);
+    var x = r.left + r.width / 2 > window.innerWidth / 2 ? r.right - w : r.left;
+    // 預覽鈕在列中間時（非範本的列）對齊邊緣會出界，夾回畫面內
+    pop.style.left = Math.max(8, Math.min(x, window.innerWidth - w - 8)) + "px";
+    var low = r.top - 24 < 200;
+    pop.style.top = low ? "12px" : "auto";
+    pop.style.bottom = low ? "auto" : window.innerHeight - r.top + 10 + "px";
+    pop.style.maxHeight = (low ? window.innerHeight - 24 : r.top - 24) + "px";
+  }
+  langBtn.addEventListener("click", function () {
+    lang = lang === "zh" ? "en" : "zh";
+    L = LANG[lang];
+    try {
+      localStorage.setItem("vt-tw-lang", lang);
+    } catch (e) {}
+    paint.forEach(function (f) {
+      f();
+    });
+    refreshSave();
+  });
+  function setOpen(open) {
+    if (open) place();
+    pop.hidden = !open;
+    launch.setAttribute("aria-expanded", String(open));
+  }
+  launch.addEventListener("click", function () {
+    setOpen(pop.hidden);
+  });
+  document.addEventListener("keydown", function (ev) {
+    if (ev.key === "Escape" && !pop.hidden) setOpen(false);
+  });
+  document.addEventListener("click", function (ev) {
+    // 用事件當下的路徑判斷（按鈕若在點擊後被重畫移除，closest 會找不到而誤關）
+    var inside = ev.composedPath().some(function (el) {
+      return el.classList && el.classList.contains("vt-tw-root");
+    });
+    if (!pop.hidden && !inside) setOpen(false);
+  });
+  // 把「設定檔變更」段接進評論收集函式：所有複製摘要都已經照規定拼接它，不必逐一改寫
+  function hook() {
+    var orig = window.vtCollectComments;
+    window.vtCollectComments = function () {
+      return window.vtCollectTweaks() + (orig ? orig() : "");
+    };
+  }
+  if (document.readyState === "loading")
+    document.addEventListener("DOMContentLoaded", hook);
+  else hook();
+  // querySelector：頁面沒有預覽鈕是正常的，不該讓 verify 的元素參照檢查報缺漏（同上方 vt-tweaks 的寫法）
+  var dock = document.querySelector("#preview-btn");
+  document.body.appendChild(pop);
+  if (dock) {
+    launch.classList.add("vt-tw-docked");
+    dock.parentNode.insertBefore(launch, dock);
+  } else document.body.insertBefore(launch, pop); // Tab 順序：按鈕→面板
+  // 縮放、捲動時按鈕會跟著列移動（捲到頁尾，列會被頁尾往上推），開著的面板要跟著對齊
+  function follow() {
+    if (!pop.hidden) place();
+  }
+  window.addEventListener("resize", follow);
+  window.addEventListener("scroll", follow, { passive: true });
+  refreshSave();
+})();
+
+</script>
+<!-- vt-tweaks:end -->
+</body>
+</html>
