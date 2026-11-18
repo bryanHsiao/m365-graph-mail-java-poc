@@ -511,7 +511,7 @@ intel-poc@contoso.onmicrosoft.com 收件匣 1 封
     <dl class="myths">
       <div><dt>串公司內部的 AD，就能寄信讀信</dt><dd>內部 AD 只管使用者登入。Exchange Online 在雲端，程式要向雲端的 Entra ID 取得授權，內部 AD 給不了。</dd></div>
       <div><dt>用帳號密碼走 IMAP 就好</dt><dd>Exchange Online 已永久停用 IMAP／POP 帳密登入，無法重新開啟。IMAP 也得用 OAuth。</dd></div>
-      <div><dt>改用 IMAP 可以省掉應用程式註冊</dt><dd>不行。IMAP 一樣要應用程式註冊與信箱授權，而且要多開 993 port、寄信還得另外處理（見<a href="#deep">深入</a>的 IMAP 對照）。</dd></div>
+      <div><dt>改用 IMAP 可以省掉應用程式註冊</dt><dd>不行。<a href="https://learn.microsoft.com/zh-tw/exchange/client-developer/legacy-protocols/how-to-authenticate-an-imap-pop-smtp-application-by-using-oauth">IMAP 一樣要應用程式註冊與信箱授權</a>，而且要多開 993 port、寄信還得另外處理（見<a href="#deep">深入</a>的 IMAP 對照）。</dd></div>
       <div><dt>token 裡沒有權限，程式就不能用</dt><dd>用 Exchange 角色指派時，token 的 roles 本來就是空的，權限是 Exchange 收到請求時才查。要實際呼叫才知道。</dd></div>
       <div><dt>直接在 Entra 勾 Mail.Send、Mail.ReadWrite 最省事</dt><dd>那是整個租用戶所有信箱的權限，一旦用戶端密碼外流，所有信箱都曝險。用 Exchange 角色指派限定到專用信箱。</dd></div>
       <div><dt>可以不連外網</dt><dd>信箱在 Microsoft 雲端，一定要連外；範圍只限 Microsoft 的網域，而且只需要主機主動連出。</dd></div>
