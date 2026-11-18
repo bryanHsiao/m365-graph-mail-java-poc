@@ -1,0 +1,6 @@
+# 執行期檔案：含用戶端密碼的設定檔、PowerShell 模組、測試信
+local/
+# 建置產物
+build/
+# JavaMail 自己下載，不放進版本控制
+lib/

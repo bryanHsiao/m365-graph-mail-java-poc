@@ -1,0 +1,27 @@
+# 情資系統 Graph PoC 設定檔（請用 UTF-8 存檔）
+# 通常由 setup\setup-m365-poc.ps1 自動產生到 local\graph-poc.properties；手動建立時複製本檔到該位置再填值
+# 只放 M365 試用租用戶的值，不要放正式環境的密鑰
+
+# Entra ID 目錄（租用戶）識別碼
+tenantId=
+# 應用程式註冊的「應用程式（用戶端）識別碼」
+clientId=
+# 用戶端密碼的「值」（不是密碼識別碼）
+clientSecret=
+
+# 情資系統專用信箱（建議用共用信箱，不用授權）
+mailbox=intel-poc@xxxx.onmicrosoft.com
+# 處理完的信搬到這個資料夾，不存在會自動建立
+processedFolder=情資已處理
+# false：讀收件匣全部；true：只讀未讀
+unreadOnly=false
+maxMessages=20
+
+# 測試寄信的收件者，多個用逗號分隔
+testTo=
+# 讀信轉 Notes 文件用的表單
+notesForm=Memo
+
+# 伺服器要走 proxy 才能上網時再設定
+#proxyHost=
+#proxyPort=8080

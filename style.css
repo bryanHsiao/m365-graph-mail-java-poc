@@ -283,8 +283,8 @@ table.ruled td { min-width: 4.5em; }
 }
 
 /* 內文裡的外部連結：底線用訊號色，看得出是連結 */
-.statement-line a, .facts a, .myths a, ul.points a, table.ruled a, .note a, .callout a, .more p a { text-decoration-color: var(--color-accent); text-decoration-thickness: 1px; text-underline-offset: 0.2em; }
-.statement-line a:hover, .facts a:hover, .myths a:hover, ul.points a:hover, table.ruled a:hover, .note a:hover, .callout a:hover, .more p a:hover { color: var(--color-accent-deep); }
+.statement-line a, .facts a, .myths a, ul.points a, table.ruled a, .note a, .callout a, .more p a, .close p a { text-decoration-color: var(--color-accent); text-decoration-thickness: 1px; text-underline-offset: 0.2em; }
+.statement-line a:hover, .facts a:hover, .myths a:hover, ul.points a:hover, table.ruled a:hover, .note a:hover, .callout a:hover, .more p a:hover, .close p a:hover { color: var(--color-accent-deep); }
 
 /* 導覽列右側的 GitHub 圖示 */
 .gh { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 44px; height: 44px; border-radius: var(--radius-input); color: var(--color-ink-2); transition: color var(--dur-short) var(--ease-out), background-color var(--dur-short) var(--ease-out); }

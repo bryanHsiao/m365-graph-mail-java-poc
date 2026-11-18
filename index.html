@@ -625,6 +625,7 @@ intel-poc@contoso.onmicrosoft.com 收件匣 1 封
       <details>
         <summary>程式結構：每個類別負責什麼</summary>
         <div class="inside">
+          <p>完整原始碼在 GitHub 的 <a href="https://github.com/bryanHsiao/m365-graph-mail-java-poc/tree/main/poc-graph-java">poc-graph-java</a> 資料夾。</p>
           <div class="table-scroll" tabindex="0" role="region" aria-label="程式結構">
             <table class="ruled">
               <thead><tr><th scope="col">類別</th><th scope="col">負責</th><th scope="col">放在 Domino 的哪裡</th></tr></thead>
@@ -665,7 +666,7 @@ intel-poc@contoso.onmicrosoft.com 收件匣 1 封
 
     <div class="close" id="cmds">
       <h3>命令列工具與常用指令速查</h3>
-      <p>寄、列、讀、搬都能在命令列跑，不需要 Notes。</p>
+      <p>寄、列、讀、搬都能在命令列跑，不需要 Notes。<code>graph-poc.jar</code> 由 GitHub 上的 <a href="https://github.com/bryanHsiao/m365-graph-mail-java-poc/tree/main/poc-graph-java">poc-graph-java 原始碼</a>用 <code>build.ps1</code> 編出來：先把 <code>javax.mail.jar</code> 放到 <code>lib\</code>，再執行 build.ps1，步驟見該資料夾的 README。</p>
       <ul class="cmds">
         <li class="cmd"><div><code>java -jar graph-poc.jar graph-poc.properties token</code><small>取 token，顯示到期時間與 token 內的權限</small></div><button class="key key--small" type="button" data-copy>複製</button></li>
         <li class="cmd"><div><code>java -jar graph-poc.jar graph-poc.properties send [收件者]</code><small>寄測試信（中文主旨、HTML 表格、中文檔名附件）</small></div><button class="key key--small" type="button" data-copy>複製</button></li>
