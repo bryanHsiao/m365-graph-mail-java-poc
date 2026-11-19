@@ -12,6 +12,10 @@ Exchange Online 已停用 IMAP／POP 的帳號密碼登入，用 JavaMail 帳密
 - 踩過的坑：Graph 讀取請求回 406、新租用戶角色指派被拒、PowerShell 5.1 模組問題、Windows Defender 擋寫入等
 - 邊界：用戶端密碼到期、大附件、收件者格式、權限生效延遲、尚未驗證的部分
 
+## 文件
+
+- [docs/廠商設定手冊-Exchange-Graph串接.md](docs/%E5%BB%A0%E5%95%86%E8%A8%AD%E5%AE%9A%E6%89%8B%E5%86%8A-Exchange-Graph%E4%B8%B2%E6%8E%A5.md)：給 Exchange Online／Entra ID 管理者的設定手冊（應用程式註冊、用戶端密碼、信箱、管理範圍、角色指派、檢查、交付值、維運），另有 [Word 版](docs/%E5%BB%A0%E5%95%86%E8%A8%AD%E5%AE%9A%E6%89%8B%E5%86%8A-Exchange-Graph%E4%B8%B2%E6%8E%A5.docx)
+
 ## 程式
 
 `poc-graph-java/`：教學頁用到的 Java 8 程式（命令列工具、Domino agent 範例、離線測試、試用租用戶設定腳本）。建置與執行方式見 [poc-graph-java/README.md](poc-graph-java/README.md)。
