@@ -100,7 +100,7 @@
         </tbody>
       </table>
     </div>
-    <p class="note"><b>類比失準的地方</b>：通行證上通常印著能進哪些區域，但用 Exchange 角色指派時，token 裡<b>看不到</b>任何權限（roles 是空的），權限是 Exchange 收到請求時才查。所以「token 裡沒有權限」不代表程式不能用，要實際呼叫才知道。</p>
+    <p class="note"><b>類比失準的地方</b>：通行證上通常印著能進哪些區域，但用 Exchange 角色指派時，token 裡<b>看不到</b>任何權限（roles 是空的），權限是 Exchange 收到請求時才查；Entra 後台的「API 權限」也看不到，目前只能用 Exchange PowerShell 查（微軟說合併顯示的功能<a href="https://learn.microsoft.com/zh-tw/exchange/permissions-exo/application-rbac">即將推出</a>）。所以「token 裡沒有權限」不代表程式不能用，要實際呼叫才知道。</p>
   </div>
 </section>
 
